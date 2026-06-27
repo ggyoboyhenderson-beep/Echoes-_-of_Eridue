@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AXIOM — Where Empires Never Died</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- TITLE / PROTAGONIST SELECT -->
+    <section id="screen-title" class="screen">
+      <div class="title-wrap">
+        <h1 class="logo">AXIOM</h1>
+        <p class="subtitle">Where empires never died &amp; the future never arrived.</p>
+        <p class="flavor">You don't enter AXIOM's world. You are inserted into something that was
+          already moving, already bleeding, already ancient.</p>
+
+        <div id="proto-select"></div>
+
+        <div class="title-actions">
+          <button id="btn-continue" class="ghost" hidden>Continue your history</button>
+          <button id="btn-wipe" class="ghost danger" hidden>Erase save</button>
+        </div>
+        <p class="credit">A playable adaptation of the AXIOM Game Design Bible v1.0 — no chosen one, no loading screens, no rescue.</p>
+      </div>
+    </section>
+
+    <!-- MAIN GAME -->
+    <section id="screen-game" class="screen" hidden>
+      <header id="hud">
+        <div class="hud-left">
+          <span id="hud-name"></span>
+          <span id="hud-role" class="muted"></span>
+        </div>
+        <div class="hud-clock">
+          <span id="hud-day"></span>
+          <span id="hud-period" class="muted"></span>
+          <span id="hud-weather" class="chip"></span>
+        </div>
+        <div class="hud-right">
+          <span id="hud-money" class="chip coin"></span>
+          <button id="btn-menu" class="ghost small">☰</button>
+        </div>
+      </header>
+
+      <div id="vitals"></div>
+
+      <main id="board">
+        <div id="location" class="panel"></div>
+        <div id="actions" class="panel"></div>
+      </main>
+
+      <div id="sidewrap">
+        <div id="detail" class="panel"></div>
+        <div id="logpanel" class="panel">
+          <h3>The Record <span class="muted small">— your specific history</span></h3>
+          <div id="log"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- modal -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-box">
+      <div id="modal-body"></div>
+      <button id="modal-close" class="ghost">Close</button>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/actions.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
