@@ -37,8 +37,9 @@ UI.renderTitle = function () {
   wipe.onclick = () => { if (confirm("Erase your history? This cannot be undone.")) { State.wipe(); location.reload(); } };
 };
 
-/* ---- Full game render ---------------------------------------------------- */
+/* ---- Full game render (legacy 2D board; unused by the 3D front-end) ------- */
 UI.render = function () {
+  if (!UI.$("#board")) return; // 3D build has no 2D board
   const g = State.data;
   if (!g) return;
   document.body.classList.toggle("era-neon", g.here === "neon_labyrinth" || g.here === "spire");

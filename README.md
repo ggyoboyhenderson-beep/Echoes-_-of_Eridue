@@ -8,9 +8,15 @@ arrived before society was ready for it.
 
 The full design bible imagines a AAA open-world title (Unreal Engine 5,
 photogrammetry, 2,000 simulated NPCs). This repository is a **faithful, fully
-playable implementation of AXIOM's *systems*** rather than its rendering tech —
-a browser RPG that runs the simulation the bible describes: the world precedes
-you, does not care about you, and was already moving before you opened your eyes.
+playable implementation of AXIOM's *systems*** in a **first-person 3D world** you
+walk through — built with Three.js and running the simulation the bible
+describes: the world precedes you, does not care about you, and was already
+moving before you opened your eyes.
+
+Each district is a walkable 3D environment built procedurally in its own
+civilizational era — the stepped sandstone of the Ziggurat Crown, the neon-lit
+towers of the Labyrinth, the low bioluminescent dark of the Sub-Strata — with
+interaction stations and gates you physically approach.
 
 > *"You don't enter AXIOM's world. You are inserted into something that was
 > already moving, already bleeding, already ancient."*
@@ -19,16 +25,28 @@ you, does not care about you, and was already moving before you opened your eyes
 
 ## Play it
 
-No build step, no dependencies. Just open the file:
+No build step, no install, no CDN at runtime (Three.js is vendored locally).
+Just open the file:
 
 ```
 open index.html       # macOS
 xdg-open index.html   # Linux
-# or serve it:
-python3 -m http.server   # then visit http://localhost:8000
+# or serve it:  python3 -m http.server   # then visit http://localhost:8000
 ```
 
-Works in any modern browser. Progress autosaves to `localStorage` after every action.
+Works in any modern WebGL browser. Pick a protagonist, then:
+
+| Input | Action |
+| --- | --- |
+| **Click** | Lock the mouse and look around |
+| **W A S D** | Walk through the district |
+| **E** | Interact with the station/gate you're standing at |
+| **Tab** | Open/close the panels (Skills · Market · Pack · Lore · Record · Menu) |
+| **Esc** | Release the cursor |
+
+Walk up to a **gate** to travel to an adjacent district, an **NPC** to talk, the
+**Market** stall to trade, **Rest** to sleep, the **Food Vendor** to eat, and so
+on. Progress autosaves to `localStorage` after every action.
 
 ---
 
@@ -50,22 +68,27 @@ Works in any modern browser. Progress autosaves to `localStorage` after every ac
 
 ## How it's built
 
-Pure vanilla JavaScript, no framework, no bundler — loaded as plain `<script>` tags.
+Vanilla JavaScript, no framework, no bundler — plain `<script>` tags. The only
+dependency is Three.js, vendored locally as a UMD build so the game runs straight
+from `file://` with no server and no network.
 
 ```
-index.html        # shell + screens
-css/styles.css    # era-layered aesthetic (warm ancient stone vs. cold neon)
-js/data.js        # the world: districts, protagonists, NPCs, goods, weather, omens, fragments
-js/engine.js      # simulation: clock, body, skills, reputation propagation, economy, cascades
-js/state.js       # game state + localStorage save/load
-js/actions.js     # player actions (travel, work, train, trade, talk, explore, survive)
-js/ui.js          # rendering + input
-js/main.js        # bootstrap & control flow
+index.html              # shell, title screen, 3D canvas + HUD overlay
+css/styles.css          # era-layered aesthetic (warm ancient stone vs. cold neon)
+js/data.js              # the world: districts, protagonists, NPCs, goods, weather, omens, fragments
+js/engine.js            # simulation: clock, body, skills, reputation propagation, economy, cascades
+js/state.js             # game state + localStorage save/load
+js/actions.js           # player actions (travel, work, train, trade, talk, explore, survive)
+js/world3d.js           # 3D world: procedural era architecture, first-person controls, interaction, HUD
+js/ui.js                # title screen + modal helpers
+js/main.js              # bootstrap & control flow
+js/vendor/three.min.js  # Three.js r128 (MIT), vendored
 ```
 
 The simulation core is DOM-free and was smoke-tested headlessly across all six
 protagonists (random play, sensible play, and the full conspiracy-assembly path);
-the UI was verified interactively in a headless browser.
+the 3D front-end was verified interactively in a headless WebGL browser across
+multiple districts.
 
 ---
 

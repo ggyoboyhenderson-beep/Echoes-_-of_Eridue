@@ -15,48 +15,48 @@
         <p class="subtitle">Where empires never died &amp; the future never arrived.</p>
         <p class="flavor">You don't enter AXIOM's world. You are inserted into something that was
           already moving, already bleeding, already ancient.</p>
-
         <div id="proto-select"></div>
-
         <div class="title-actions">
           <button id="btn-continue" class="ghost" hidden>Continue your history</button>
           <button id="btn-wipe" class="ghost danger" hidden>Erase save</button>
         </div>
-        <p class="credit">A playable adaptation of the AXIOM Game Design Bible v1.0 — no chosen one, no loading screens, no rescue.</p>
+        <p class="credit">A 3D adaptation of the AXIOM Game Design Bible v1.0 — no chosen one, no loading screens, no rescue.</p>
       </div>
     </section>
 
-    <!-- MAIN GAME -->
+    <!-- 3D GAME -->
     <section id="screen-game" class="screen" hidden>
-      <header id="hud">
-        <div class="hud-left">
-          <span id="hud-name"></span>
-          <span id="hud-role" class="muted"></span>
-        </div>
-        <div class="hud-clock">
-          <span id="hud-day"></span>
-          <span id="hud-period" class="muted"></span>
-          <span id="hud-weather" class="chip"></span>
-        </div>
-        <div class="hud-right">
-          <span id="hud-money" class="chip coin"></span>
-          <button id="btn-menu" class="ghost small">☰</button>
-        </div>
-      </header>
+      <canvas id="scene"></canvas>
 
-      <div id="vitals"></div>
-
-      <main id="board">
-        <div id="location" class="panel"></div>
-        <div id="actions" class="panel"></div>
-      </main>
-
-      <div id="sidewrap">
-        <div id="detail" class="panel"></div>
-        <div id="logpanel" class="panel">
-          <h3>The Record <span class="muted small">— your specific history</span></h3>
-          <div id="log"></div>
+      <!-- HUD overlay -->
+      <div id="hud3d">
+        <div id="topbar">
+          <div class="tb-left"><span id="hud-name"></span> <span id="hud-role" class="muted"></span></div>
+          <div class="tb-mid"><span id="hud-day"></span> · <span id="hud-period" class="muted"></span> <span id="hud-weather" class="chip"></span></div>
+          <div class="tb-right"><span id="hud-money" class="chip coin"></span><span id="hud-district" class="chip"></span></div>
         </div>
+
+        <div id="crosshair">+</div>
+        <div id="prompt"></div>
+        <div id="toast"></div>
+
+        <div id="vitals3d"></div>
+
+        <div id="hint">Click to look around · <b>WASD</b> move · <b>E</b> interact · <b>Tab</b> panels · <b>Esc</b> release cursor</div>
+      </div>
+
+      <!-- Panels (shown when cursor released) -->
+      <div id="panels" hidden>
+        <div class="panel-tabs">
+          <button data-t="skills" class="primary">Skills</button>
+          <button data-t="market">Market</button>
+          <button data-t="pack">Pack</button>
+          <button data-t="lore">Lore</button>
+          <button data-t="log">Record</button>
+          <button data-t="menu">Menu</button>
+          <button id="panels-close" class="ghost">✕ Resume (Tab)</button>
+        </div>
+        <div id="panel-body"></div>
       </div>
     </section>
   </div>
@@ -69,11 +69,21 @@
     </div>
   </div>
 
+  <!-- Three.js (UMD, vendored — defines global THREE; runs from file://) -->
+  <script src="js/vendor/three.min.js"></script>
+  <!-- Simulation core (classic scripts; shared globals) -->
   <script src="js/data.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/state.js"></script>
   <script src="js/actions.js"></script>
   <script src="js/ui.js"></script>
+  <!-- Bridge lexical globals to window for cross-script access -->
+  <script>
+    window.AXIOM = AXIOM; window.Engine = Engine; window.State = State;
+    window.Actions = Actions; window.UI = UI;
+  </script>
+  <!-- 3D world + bootstrap (classic scripts) -->
+  <script src="js/world3d.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

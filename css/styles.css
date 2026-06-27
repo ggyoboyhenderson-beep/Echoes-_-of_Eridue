@@ -171,3 +171,74 @@ body.era-neon .logo, .era-neon #location h2 { color: var(--neon); }
 @media (max-width: 820px) {
   #board, #sidewrap { grid-template-columns: 1fr; }
 }
+
+/* ==========================================================================
+ * 3D FRONT-END — full-viewport canvas with a HUD overlay
+ * ========================================================================== */
+#screen-game { position: fixed; inset: 0; z-index: 5; }
+#scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: crosshair; }
+
+#hud3d { position: fixed; inset: 0; pointer-events: none; z-index: 6; font-family: "Iowan Old Style", Georgia, serif; }
+#hud3d .chip { background: rgba(0,0,0,.5); }
+
+#topbar {
+  position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between;
+  align-items: center; gap: 12px; padding: 10px 16px;
+  background: linear-gradient(rgba(10,8,6,.7), rgba(10,8,6,0));
+  font-size: 14px;
+}
+#topbar .tb-left { display: flex; gap: 8px; align-items: baseline; }
+#hud-name { color: var(--sand); font-size: 16px; }
+#topbar .tb-mid { color: var(--text); }
+#topbar .tb-right { display: flex; gap: 8px; }
+
+#crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: rgba(230,180,80,.6); font-size: 20px; }
+#prompt {
+  position: absolute; top: 58%; left: 50%; transform: translateX(-50%);
+  color: var(--sand); font-size: 18px; text-shadow: 0 2px 6px #000; text-align: center;
+}
+#prompt .key {
+  display: inline-block; border: 1px solid var(--cedar); color: var(--cedar);
+  border-radius: 4px; padding: 0 7px; margin-right: 6px; font-size: 15px;
+}
+#toast {
+  position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%);
+  max-width: 640px; text-align: center; color: var(--text); font-size: 15px;
+  background: rgba(10,8,6,.72); padding: 8px 16px; border-radius: 6px;
+  text-shadow: 0 1px 3px #000;
+}
+#toast:empty { display: none; }
+#toast.k-warn, #toast.k-injury { color: var(--warn); }
+#toast.k-reveal, #toast.k-fragment, #toast.k-omen { color: var(--gold); font-style: italic; }
+#toast.k-world { color: var(--neon); }
+
+#vitals3d { position: absolute; left: 16px; bottom: 44px; width: 220px; display: grid; gap: 5px; }
+.v3 { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.v3l { width: 52px; text-transform: uppercase; letter-spacing: .08em; }
+.v3b { flex: 1; height: 7px; background: rgba(0,0,0,.6); border-radius: 4px; overflow: hidden; }
+.v3b > span { display: block; height: 100%; transition: width .3s; }
+.v3.inj { color: var(--bad); width: auto; }
+
+#hint { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; color: var(--muted); font-size: 12px; }
+#hint b { color: var(--sand-dim); }
+
+/* Panels overlay (cursor released) */
+#panels {
+  position: fixed; inset: 0; z-index: 8; display: flex; flex-direction: column;
+  align-items: center; padding: 28px 16px; overflow-y: auto;
+  background: rgba(8,6,5,.82); backdrop-filter: blur(2px);
+}
+.panel-tabs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-bottom: 14px; }
+#panel-body { width: 100%; max-width: 620px; background: var(--stone-2); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; }
+.prow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.prow:last-child { border-bottom: 0; }
+.prow.lore { align-items: flex-start; font-size: 13px; }
+.pn { color: var(--sand); flex: 1; }
+.pbar { flex: 1; height: 7px; max-width: 200px; background: #000; border-radius: 4px; overflow: hidden; }
+.pbar > span { display: block; height: 100%; background: var(--cedar); }
+.pv { width: 40px; text-align: right; color: var(--muted); }
+.pv.coin { color: var(--gold); }
+button.mini { padding: 3px 9px; font-size: 12px; }
+.menu-row { display: flex; gap: 8px; margin: 10px 0; }
+#panel-body .logline { font-size: 13px; }
+.reveal { color: var(--gold); font-style: italic; margin-top: 12px; }
