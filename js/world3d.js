@@ -102,12 +102,22 @@ World.start = function () {
 };
 
 /* ---- helpers to add geometry -------------------------------------------- */
+let currentBuildKind = null;   // detail texture used by theme.build() structures
+
 function box(w, h, d, color, x, y, z, opts = {}) {
-  const mat = new THREE.MeshStandardMaterial({
+  const matOpts = {
     color, roughness: opts.rough ?? 0.9, metalness: opts.metal ?? 0.0,
     emissive: opts.emissive ?? 0x000000, emissiveIntensity: opts.ei ?? 1,
-  });
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  };
+  // Apply a tinted detail texture to surfaces — skip strong glow accents.
+  const kind = opts.tex !== undefined ? opts.tex : currentBuildKind;
+  const glowing = opts.emissive && (opts.ei ?? 1) >= 0.8;
+  if (kind && Art && !glowing) {
+    const rw = Math.max(1, Math.round((w + d) / 3));
+    const rh = Math.max(1, Math.round(h / 2.2));
+    matOpts.map = Art.detail(kind, rw, rh);
+  }
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial(matOpts));
   m.position.set(x, y, z);
   scene.add(m);
   return m;
@@ -160,8 +170,10 @@ World.buildDistrict = function (id, spawnCenter) {
     [1, ph, BOUND * 2, BOUND, ph / 2, 0],
   ]) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dz), wallMat); m.position.set(x, y, z); scene.add(m); }
 
-  // era architecture
+  // era architecture (textured with the district's building surface)
+  currentBuildKind = BUILD_TEX[id] || null;
   theme.build(rnd);
+  currentBuildKind = null;
 
   // night dimming + power outage flavour
   const night = Engine.isNight(g);
@@ -185,7 +197,8 @@ World.buildDistrict = function (id, spawnCenter) {
     placeStation(s, Math.cos(a) * R, Math.sin(a) * R, theme);
   });
 
-  // gates to adjacent districts on the perimeter
+  // gates to adjacent districts on the perimeter (posts share the wall surface)
+  currentBuildKind = BUILD_TEX[id] || null;
   const adj = AXIOM.ROUTES[id];
   adj.forEach((dest, i) => {
     const a = (i / adj.length) * Math.PI * 2;
@@ -197,6 +210,7 @@ World.buildDistrict = function (id, spawnCenter) {
     s.dest = dest;
     placeGate(s, gx, gz, a, theme, locked);
   });
+  currentBuildKind = null;
 
   // populate the district with people who live in it
   spawnPeople(g, id, rnd);
@@ -218,10 +232,11 @@ const REACT = 7.5;        // distance at which a person notices and turns to you
 /* Build a humanoid from torso/head/limbs with varied proportions. */
 function makeHuman(ap) {
   const grp = new THREE.Group();
+  const weave = Art ? Art.detail("cloth", 2, 3) : null;
   const skin = new THREE.MeshStandardMaterial({ color: ap.skin, roughness: 0.85 });
   const hairM = new THREE.MeshStandardMaterial({ color: ap.hair, roughness: 0.9 });
-  const cloth = new THREE.MeshStandardMaterial({ color: ap.cloth, roughness: 0.95 });
-  const cloth2 = new THREE.MeshStandardMaterial({ color: ap.cloth2, roughness: 0.95 });
+  const cloth = new THREE.MeshStandardMaterial({ color: ap.cloth, roughness: 0.95, map: weave });
+  const cloth2 = new THREE.MeshStandardMaterial({ color: ap.cloth2, roughness: 0.95, map: weave });
   const dark = new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 0.6 });
   const mk = (w, h, d, mat) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
 
@@ -400,6 +415,13 @@ function placeGate(s, x, z, angle, theme, locked) {
   s.pos = new THREE.Vector3(x, 1, z); s.radius = ACTIVATE + 1; s.mesh = null;
   interactables.push(s);
 }
+
+/* Detail texture used for each district's buildings. */
+const BUILD_TEX = {
+  ziggurat_crown: "brick", hanging_market: "brick", god_quarter: "stone",
+  ironwall: "concrete", broken_crown: "plank", neon_labyrinth: "panel",
+  spire: "panel", sub_strata: "stone",
+};
 
 /* ======================================================================== */
 /* Per-era architecture builders. Each adds meshes; `rnd` is seeded.        */

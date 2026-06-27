@@ -120,6 +120,87 @@ Art.pattern = function (kind, base, accent, seed) {
   return tex;
 };
 
+/* --------------------------------------------------------------------------
+ * Grayscale DETAIL textures for buildings & clothing. These are near-white
+ * with darker pattern lines, so when used as a `map` they multiply against the
+ * material's colour — one texture textures objects of any colour.
+ * -------------------------------------------------------------------------- */
+Art._gray = {};
+Art.grayPattern = function (kind) {
+  if (Art._gray[kind]) return Art._gray[kind];
+  const S = 128, c = document.createElement("canvas"); c.width = c.height = S;
+  const x = c.getContext("2d");
+  const rnd = _rng(kind.length * 777 + 3);
+  const G = (v) => `rgb(${v},${v},${v})`;
+  x.fillStyle = G(232); x.fillRect(0, 0, S, S);
+
+  switch (kind) {
+    case "brick": { // running-bond brick, dark mortar
+      const bw = 32, bh = 16;
+      x.fillStyle = G(150); x.fillRect(0, 0, S, S);
+      for (let row = 0, y = 0; y < S; row++, y += bh)
+        for (let bx = -bw; bx < S; bx += bw) {
+          const off = (row % 2) * (bw / 2);
+          x.fillStyle = G(210 + (rnd() * 35 | 0));
+          x.fillRect(bx + off + 1.5, y + 1.5, bw - 3, bh - 3);
+        }
+      break;
+    }
+    case "stone": { // irregular ashlar, dark grout
+      x.fillStyle = G(140); x.fillRect(0, 0, S, S);
+      let y = 0;
+      while (y < S) { const h = 18 + rnd() * 18; let bx = 0;
+        while (bx < S) { const w = 24 + rnd() * 30; x.fillStyle = G(195 + (rnd() * 45 | 0));
+          x.fillRect(bx + 2, y + 2, w - 4, h - 4); bx += w; } y += h; }
+      break;
+    }
+    case "concrete": { // grain + faint seams + stains
+      for (let i = 0; i < 1400; i++) { const v = 200 + (rnd() * 55 | 0); x.fillStyle = G(v); x.fillRect(rnd() * S, rnd() * S, 1, 1); }
+      x.strokeStyle = G(170); x.lineWidth = 1;
+      for (let i = 0; i < 3; i++) { const px = (rnd() * S) | 0; x.beginPath(); x.moveTo(px, 0); x.lineTo(px, S); x.stroke(); }
+      for (let i = 0; i < 10; i++) { x.fillStyle = `rgba(0,0,0,${(rnd() * 0.08).toFixed(3)})`; x.fillRect(rnd() * S, rnd() * S, 14 + rnd() * 30, 14 + rnd() * 30); }
+      break;
+    }
+    case "panel": { // metal panel grid with seams + rivets
+      const p = 32; x.fillStyle = G(225); x.fillRect(0, 0, S, S);
+      x.strokeStyle = G(150); x.lineWidth = 2;
+      for (let i = 0; i <= S; i += p) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, S); x.stroke(); x.beginPath(); x.moveTo(0, i); x.lineTo(S, i); x.stroke(); }
+      x.fillStyle = G(120);
+      for (let gy = p / 2; gy < S; gy += p) for (let gx = p / 2; gx < S; gx += p) { x.beginPath(); x.arc(gx, gy, 1.4, 0, 7); x.fill(); }
+      break;
+    }
+    case "plank": { // horizontal salvage planks
+      const ph = 16;
+      for (let y = 0; y < S; y += ph) { const v = 195 + (rnd() * 50 | 0); x.fillStyle = G(v); x.fillRect(0, y + 1, S, ph - 2);
+        x.fillStyle = G(140); x.fillRect(0, y, S, 1); }
+      for (let i = 0; i < 600; i++) { x.fillStyle = `rgba(0,0,0,${(rnd() * 0.12).toFixed(3)})`; x.fillRect(rnd() * S, rnd() * S, 1, 2 + rnd() * 4); }
+      break;
+    }
+    case "cloth": default: { // soft woven fabric
+      for (let i = 0; i < 2200; i++) { const v = 205 + (rnd() * 45 | 0); x.fillStyle = G(v); x.fillRect(rnd() * S, rnd() * S, 2, 1); }
+      x.strokeStyle = "rgba(0,0,0,0.05)"; x.lineWidth = 1;
+      for (let i = 0; i < S; i += 4) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, S); x.stroke(); }
+      break;
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
+  Art._gray[kind] = t;
+  return t;
+};
+
+/* A detail texture cloned to a given tiling (cached by kind+repeat bucket). */
+Art._detailCache = {};
+Art.detail = function (kind, rw, rh) {
+  const key = `${kind}|${rw}|${rh}`;
+  if (Art._detailCache[key]) return Art._detailCache[key];
+  const base = Art.grayPattern(kind);
+  const t = base.clone(); t.needsUpdate = true;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rw, rh); t.anisotropy = 4;
+  Art._detailCache[key] = t;
+  return t;
+};
+
 /* Materials for the 3D world, themed per district. */
 Art.groundMaterial = function (theme) {
   const t = Art.pattern(theme.tex, theme.ground, theme.texAccent || theme.wall, theme.seed);

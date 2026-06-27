@@ -99,11 +99,13 @@ multiple districts.
 
 All art is original and generated from code — no external or copyrighted assets:
 
-- **Procedural era textures** painted to canvas and applied to the 3D ground and
-  walls: fired-brick running bond (ancient), irregular ashlar stone (sacred),
-  cracked concrete (medieval fortress), salvage patchwork (slums), a glowing
+- **Procedural era textures** painted to canvas and applied to the 3D ground,
+  walls, **buildings, and clothing** — nothing is a flat block: fired-brick
+  running bond (ancient), irregular ashlar stone (sacred), cracked concrete
+  (medieval fortress), salvage planks (slums), seamed metal panels and a glowing
   neon grid (cyberpunk), veined marble (corporate), and bioluminescent rock
-  (underground).
+  (underground). A grayscale detail map is tinted per object, so one texture
+  surfaces structures of any colour, with tiling scaled to each object's size.
 - **Authored SVG heraldry**: a distinct crest for each of the eight districts, a
   sigil for each faction (shown in dialogue), and a title logo glyph of a stepped
   ziggurat rising into a neon spire.
