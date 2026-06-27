@@ -11,7 +11,7 @@
 "use strict";
 const THREE = window.THREE;
 const AXIOM = window.AXIOM, Engine = window.Engine, State = window.State,
-      Actions = window.Actions, UI = window.UI;
+      Actions = window.Actions, UI = window.UI, Art = window.Art;
 
 const World = {};
 window.World3D = World;
@@ -145,21 +145,20 @@ World.buildDistrict = function (id, spawnCenter) {
   const sun = new THREE.DirectionalLight(theme.sun, theme.sunInt);
   sun.position.set(20, 40, 10); scene.add(sun);
 
-  // ground
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(BOUND * 2 + 8, BOUND * 2 + 8),
-    new THREE.MeshStandardMaterial({ color: theme.ground, roughness: 1 })
-  );
+  // ground (procedurally textured per era)
+  const groundMat = Art ? Art.groundMaterial(theme) : new THREE.MeshStandardMaterial({ color: theme.ground, roughness: 1 });
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(BOUND * 2 + 8, BOUND * 2 + 8), groundMat);
   ground.rotation.x = -Math.PI / 2; scene.add(ground);
 
   // perimeter wall (with gate gaps implied by short height)
   const ph = theme.wallH;
+  const wallMat = Art ? Art.wallMaterial(theme) : new THREE.MeshStandardMaterial({ color: theme.wall, roughness: 1 });
   for (const [w, h, dz, x, y, z] of [
     [BOUND * 2, ph, 1, 0, ph / 2, -BOUND],
     [BOUND * 2, ph, 1, 0, ph / 2, BOUND],
     [1, ph, BOUND * 2, -BOUND, ph / 2, 0],
     [1, ph, BOUND * 2, BOUND, ph / 2, 0],
-  ]) box(w, h, dz, theme.wall, x, y, z, { rough: 1 });
+  ]) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dz), wallMat); m.position.set(x, y, z); scene.add(m); }
 
   // era architecture
   theme.build(rnd);
@@ -406,6 +405,7 @@ function placeGate(s, x, z, angle, theme, locked) {
 /* Per-era architecture builders. Each adds meshes; `rnd` is seeded.        */
 const THEMES = {
   ziggurat_crown: {
+    tex: "brick", groundRepeat: 8, seed: 11,
     sky: 0x3a2c1c, ground: 0xb59668, wall: 0x8a6e4a, wallH: 7,
     fogNear: 18, fogFar: 90, hemiSky: 0xffe0b0, hemiGround: 0x5a4530, hemiInt: 0.7,
     sun: 0xffd9a0, sunInt: 1.1,
@@ -421,6 +421,7 @@ const THEMES = {
     },
   },
   hanging_market: {
+    tex: "brick", groundRepeat: 9, seed: 22,
     sky: 0x2a2418, ground: 0x9a8458, wall: 0x6a5838, wallH: 6,
     fogNear: 16, fogFar: 80, hemiSky: 0xffe6b8, hemiGround: 0x4a3c28, hemiInt: 0.7,
     sun: 0xffdca0, sunInt: 0.9,
@@ -439,6 +440,7 @@ const THEMES = {
     },
   },
   god_quarter: {
+    tex: "stone", groundRepeat: 6, seed: 33,
     sky: 0x161a22, ground: 0x3a3a44, wall: 0x2a2c34, wallH: 9,
     fogNear: 10, fogFar: 60, hemiSky: 0x9aa6c0, hemiGround: 0x202028, hemiInt: 0.4,
     sun: 0x8090b0, sunInt: 0.4,
@@ -454,6 +456,7 @@ const THEMES = {
     },
   },
   ironwall: {
+    tex: "concrete", groundRepeat: 6, seed: 44,
     sky: 0x1c1c1e, ground: 0x44423e, wall: 0x33312e, wallH: 12,
     fogNear: 12, fogFar: 55, hemiSky: 0x9a9690, hemiGround: 0x222020, hemiInt: 0.35,
     sun: 0xb0a890, sunInt: 0.4,
@@ -472,6 +475,7 @@ const THEMES = {
     },
   },
   broken_crown: {
+    tex: "shanty", groundRepeat: 7, seed: 55,
     sky: 0x241c16, ground: 0x4a3e30, wall: 0x3a3026, wallH: 6,
     fogNear: 14, fogFar: 65, hemiSky: 0xd0b088, hemiGround: 0x2a2018, hemiInt: 0.6,
     sun: 0xffc080, sunInt: 0.6,
@@ -491,6 +495,7 @@ const THEMES = {
     },
   },
   neon_labyrinth: {
+    tex: "neon", groundRepeat: 10, seed: 66, texAccent: 0x38d0c8,
     sky: 0x0a0a12, ground: 0x14141c, wall: 0x1a1a26, wallH: 16,
     fogNear: 10, fogFar: 55, hemiSky: 0x303048, hemiGround: 0x08080c, hemiInt: 0.3,
     sun: 0x4040a0, sunInt: 0.25,
@@ -510,6 +515,7 @@ const THEMES = {
     },
   },
   spire: {
+    tex: "marble", groundRepeat: 5, seed: 77,
     sky: 0x9ab0c8, ground: 0xc8ccd2, wall: 0xdfe4ea, wallH: 14,
     fogNear: 30, fogFar: 140, hemiSky: 0xffffff, hemiGround: 0x90a0b0, hemiInt: 0.9,
     sun: 0xffffff, sunInt: 1.4,
@@ -524,6 +530,7 @@ const THEMES = {
     },
   },
   sub_strata: {
+    tex: "fungal", groundRepeat: 8, seed: 88,
     sky: 0x05070a, ground: 0x171c18, wall: 0x12161a, wallH: 5,
     fogNear: 6, fogFar: 34, hemiSky: 0x16301f, hemiGround: 0x05080a, hemiInt: 0.35,
     sun: 0x103018, sunInt: 0.15,
@@ -546,6 +553,7 @@ const THEMES = {
     },
   },
   _default: {
+    tex: "sand", groundRepeat: 8, seed: 99,
     sky: 0x222222, ground: 0x555555, wall: 0x444444, wallH: 6,
     fogNear: 16, fogFar: 80, hemiSky: 0xaaaaaa, hemiGround: 0x333333, hemiInt: 0.6,
     sun: 0xffffff, sunInt: 0.8, build() {},
@@ -644,7 +652,8 @@ World.updateHUD = function () {
     `${String(g.hour).padStart(2, "0")}:00 · ${per.name}${Engine.isNight(g) ? " · night" : ""}`;
   document.getElementById("hud-weather").textContent = AXIOM.WEATHER[g.weather].name;
   document.getElementById("hud-money").textContent = `${g.money} shekels`;
-  document.getElementById("hud-district").textContent = d.name;
+  const distChip = document.getElementById("hud-district");
+  distChip.innerHTML = `<span class="crest">${Art.emblem(g.here)}</span>${d.name}`;
 
   const bar = (label, val, invert) => {
     const pct = Math.max(0, Math.min(100, val));
@@ -784,7 +793,8 @@ function renderDialog(greeting) {
   const g = State.data, d = World._dialog; if (!d) return;
   const meta = d.meta;
   const rec = Engine.ensureNPC(g, meta.id);
-  document.getElementById("dlg-name").textContent = meta.name;
+  document.getElementById("dlg-name").innerHTML =
+    `<span class="sigil">${Art.sigil(meta.faction)}</span>${meta.name}`;
   const pers = People.personality(meta.kind);
   document.getElementById("dlg-role").textContent =
     `${meta.role} · ${AXIOM.FACTIONS[meta.faction] || "Unaffiliated"} — ${pers}`;

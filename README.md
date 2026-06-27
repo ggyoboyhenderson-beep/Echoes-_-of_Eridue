@@ -57,6 +57,7 @@ on. Progress autosaves to `localStorage` after every action.
 | 2–4 | **Stacked civilizational layers** | Eight districts of Ur-Axiom, each its own era, economy, control faction, danger level, and *smell* — from the Mesopotamian Ziggurat Crown to the corporate Spire to the six-thousand-year Sub-Strata underworld. |
 | 7–8 | **No chosen one** | Six selectable protagonists drawn from every social level. **Birth determines your ceiling** — status gates which districts you can even enter. You discover who you are by playing, starting at a moment of personal crisis. |
 | 7 | **Reputation & NPC memory** | Reputation is not a stat. Named NPCs remember every interaction, and strong events *propagate* through their social network — weakening with distance, bent by each receiver's prior disposition toward you. District standing shifts with the weight of who holds the opinion. |
+| 7 | **Living people** | Everyone has a distinct articulated 3D body (torso, head with face & hair, swinging arms and legs) with proportions, skin tone, hair colour, and faction dress that vary per person. They walk the district, turn to face you on approach, and hold contextual conversations — **Friendly / Neutral / Trade** — that permanently shift your standing with that specific person *and* their faction. A medic offers help; an executive threatens security; a warlord demands respect. |
 | 9 | **Skills earned, never assigned** | Competence improves through **repetition** and **decays through neglect**. Gated skills (hacking, medicine) must be *taught* by an NPC who trusts you before practice does anything. |
 | 10 | **The body as a real system** | Hunger, fatigue, and health are independent. Injuries have severity, can get infected, and take in-game *weeks* to heal. Augmented protagonists carry hardware that degrades and must be serviced. |
 | 12 | **A world that runs without you** | A compressed-time clock with six daily prayer periods. A living economy where prices drift, spike, and crash. **Cascades**: a drought drives up grain, which hits the Broken Crown hardest, which stirs unrest — whether you're watching or not. |
@@ -77,9 +78,11 @@ index.html              # shell, title screen, 3D canvas + HUD overlay
 css/styles.css          # era-layered aesthetic (warm ancient stone vs. cold neon)
 js/data.js              # the world: districts, protagonists, NPCs, goods, weather, omens, fragments
 js/engine.js            # simulation: clock, body, skills, reputation propagation, economy, cascades
+js/people.js            # factions, contextual dialogue pools, appearance, ambient resident generation
+js/art.js               # graphic art: procedural era textures + SVG crests, faction sigils, logo glyph
 js/state.js             # game state + localStorage save/load
-js/actions.js           # player actions (travel, work, train, trade, talk, explore, survive)
-js/world3d.js           # 3D world: procedural era architecture, first-person controls, interaction, HUD
+js/actions.js           # player actions (travel, work, train, trade, talk, converse, explore, survive)
+js/world3d.js           # 3D world: textured era architecture, humanoid NPCs, first-person controls, dialogue, HUD
 js/ui.js                # title screen + modal helpers
 js/main.js              # bootstrap & control flow
 js/vendor/three.min.js  # Three.js r128 (MIT), vendored
@@ -91,6 +94,19 @@ the 3D front-end was verified interactively in a headless WebGL browser across
 multiple districts.
 
 ---
+
+## Graphic art
+
+All art is original and generated from code — no external or copyrighted assets:
+
+- **Procedural era textures** painted to canvas and applied to the 3D ground and
+  walls: fired-brick running bond (ancient), irregular ashlar stone (sacred),
+  cracked concrete (medieval fortress), salvage patchwork (slums), a glowing
+  neon grid (cyberpunk), veined marble (corporate), and bioluminescent rock
+  (underground).
+- **Authored SVG heraldry**: a distinct crest for each of the eight districts, a
+  sigil for each faction (shown in dialogue), and a title logo glyph of a stepped
+  ziggurat rising into a neon spire.
 
 ## Design fidelity
 

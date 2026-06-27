@@ -11,6 +11,7 @@
     <!-- TITLE / PROTAGONIST SELECT -->
     <section id="screen-title" class="screen">
       <div class="title-wrap">
+        <div id="logo-glyph" class="logo-glyph"></div>
         <h1 class="logo">AXIOM</h1>
         <p class="subtitle">Where empires never died &amp; the future never arrived.</p>
         <p class="flavor">You don't enter AXIOM's world. You are inserted into something that was
@@ -92,6 +93,8 @@
 
   <!-- Three.js (UMD, vendored — defines global THREE; runs from file://) -->
   <script src="js/vendor/three.min.js"></script>
+  <!-- Graphic art layer (procedural textures + SVG crests; needs THREE) -->
+  <script src="js/art.js"></script>
   <!-- Simulation core (classic scripts; shared globals) -->
   <script src="js/data.js"></script>
   <script src="js/engine.js"></script>
@@ -102,7 +105,7 @@
   <!-- Bridge lexical globals to window for cross-script access -->
   <script>
     window.AXIOM = AXIOM; window.Engine = Engine; window.State = State;
-    window.Actions = Actions; window.UI = UI; window.People = People;
+    window.Actions = Actions; window.UI = UI; window.People = People; window.Art = Art;
   </script>
   <!-- 3D world + bootstrap (classic scripts) -->
   <script src="js/world3d.js"></script>

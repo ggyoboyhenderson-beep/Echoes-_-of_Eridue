@@ -15,14 +15,19 @@ UI.el = (tag, cls, html) => {
 
 /* ---- Title / protagonist select ----------------------------------------- */
 UI.renderTitle = function () {
+  // logo glyph above the wordmark
+  const glyph = UI.$("#logo-glyph");
+  if (glyph && window.Art) glyph.innerHTML = Art.logo();
+
   const wrap = UI.$("#proto-select");
   wrap.innerHTML = "";
   for (const p of AXIOM.PROTAGONISTS) {
     const st = AXIOM.STATUS[p.status];
     const skills = Object.entries(p.skills).map(([k, v]) => `${AXIOM.SKILLS[k].name} ${v}`).join(" · ");
+    const emblem = window.Art ? Art.emblem(p.home) : "";
     const card = UI.el("div", "proto-card");
     card.innerHTML = `
-      <div class="pr-status">${st.label}</div>
+      <div class="pr-top"><div class="pr-status">${st.label}</div><span class="pr-crest">${emblem}</span></div>
       <h3>${p.name}</h3>
       <div class="pr-home">${p.role} — ${AXIOM.DISTRICTS[p.home].name}</div>
       <div class="pr-born">${p.born}</div>

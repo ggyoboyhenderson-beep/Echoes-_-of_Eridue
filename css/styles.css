@@ -257,3 +257,19 @@ button.mini { padding: 3px 9px; font-size: 12px; }
 .dlg-c.friendly { border-color: #3a6a3a; } .dlg-c.friendly:hover { background: #2a3a26; }
 .dlg-c.neutral  { border-color: #4a4a5a; }
 .dlg-c.trade    { border-color: #6a5a2a; color: var(--gold); } .dlg-c.trade:hover { background: #3a3020; }
+
+/* ---- Graphic art elements ----------------------------------------------- */
+.logo-glyph { display: flex; justify-content: center; margin-bottom: -6px; }
+.logo-glyph svg { width: 132px; height: auto; filter: drop-shadow(0 0 18px rgba(56,208,200,.25)); }
+
+.pr-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.pr-crest { color: var(--cedar); opacity: .85; }
+.pr-crest svg { width: 30px; height: 30px; display: block; }
+
+#hud-district { display: inline-flex; align-items: center; gap: 6px; }
+#hud-district .crest { color: var(--cedar); display: inline-flex; }
+#hud-district .crest svg { width: 16px; height: 16px; display: block; }
+
+#dlg-name { display: flex; align-items: center; gap: 10px; }
+#dlg-name .sigil { color: var(--cedar); display: inline-flex; }
+#dlg-name .sigil svg { width: 26px; height: 26px; display: block; }
