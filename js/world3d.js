@@ -60,12 +60,18 @@ World.init = function () {
   // input
   addEventListener("keydown", (e) => {
     keys[e.code] = true;
-    if (e.code === "KeyE") World.interact();
-    if (e.code === "Tab") { e.preventDefault(); World.togglePanels(); }
+    if (e.code === "KeyE") { if (dialogOpen()) closeDialog(); else World.interact(); }
+    if (e.code === "Tab") { e.preventDefault(); if (!dialogOpen()) World.togglePanels(); }
   });
   addEventListener("keyup", (e) => { keys[e.code] = false; });
 
-  canvas.addEventListener("click", () => { if (!panelsOpen()) canvas.requestPointerLock(); });
+  canvas.addEventListener("click", () => { if (!panelsOpen() && !dialogOpen()) canvas.requestPointerLock(); });
+
+  // dialogue buttons
+  document.getElementById("dlg-friendly").onclick = () => chooseDialog("Friendly");
+  document.getElementById("dlg-neutral").onclick = () => chooseDialog("Neutral");
+  document.getElementById("dlg-trade").onclick = () => chooseDialog("Trade");
+  document.getElementById("dlg-leave").onclick = () => closeDialog();
   document.addEventListener("pointerlockmove", () => {});
   document.addEventListener("mousemove", (e) => {
     if (document.pointerLockElement === canvas) {
@@ -172,8 +178,6 @@ World.buildDistrict = function (id, spawnCenter) {
     inner.push(station("market", "Market", 0xc8a050, () => ({ panel: "market" })));
   if (id === "god_quarter") inner.push(station("omen", "Omen Altar", 0xe6b450, (g) => Actions.omen(g)));
   if (g.aug && id === "neon_labyrinth") inner.push(station("clinic", "Aug Clinic", 0x38d0c8, (g) => Actions.tuneAug(g)));
-  for (const n of Engine.npcAt(g, id))
-    inner.push(station("npc", n.name, 0xd0c0a0, (gg) => Actions.talk(gg, n.id)));
 
   // place inner stations on a ring
   const R = 11;
@@ -195,6 +199,9 @@ World.buildDistrict = function (id, spawnCenter) {
     placeGate(s, gx, gz, a, theme, locked);
   });
 
+  // populate the district with people who live in it
+  spawnPeople(g, id, rnd);
+
   // spawn
   if (spawnCenter) { player.pos.set(0, 1.7, 16); yaw = Math.PI; pitch = 0; }
   player.vel.set(0, 0, 0);
@@ -204,14 +211,175 @@ World.buildDistrict = function (id, spawnCenter) {
 
 function station(type, label, color, run) { return { type, label, color, run }; }
 
+/* ======================================================================== */
+/* PEOPLE — anatomically-built humanoids that walk, react, and remember.    */
+let agents = [];
+const REACT = 7.5;        // distance at which a person notices and turns to you
+
+/* Build a humanoid from torso/head/limbs with varied proportions. */
+function makeHuman(ap) {
+  const grp = new THREE.Group();
+  const skin = new THREE.MeshStandardMaterial({ color: ap.skin, roughness: 0.85 });
+  const hairM = new THREE.MeshStandardMaterial({ color: ap.hair, roughness: 0.9 });
+  const cloth = new THREE.MeshStandardMaterial({ color: ap.cloth, roughness: 0.95 });
+  const cloth2 = new THREE.MeshStandardMaterial({ color: ap.cloth2, roughness: 0.95 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 0.6 });
+  const mk = (w, h, d, mat) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+
+  // proportions by build
+  let tw = 0.42, td = 0.24, aw = 0.13, belly = 0;
+  if (ap.build === "thin")     { tw = 0.34; td = 0.20; aw = 0.11; }
+  if (ap.build === "muscular") { tw = 0.52; td = 0.30; aw = 0.17; }
+  if (ap.build === "fat")      { tw = 0.56; td = 0.40; aw = 0.15; belly = 0.18; }
+  const legH = 0.82, torsoH = 0.66, headS = 0.26, armLen = 0.60;
+  const shoulderY = legH + torsoH;
+
+  // legs (pivot at hip so they can swing)
+  const legX = tw * 0.28;
+  const mkLeg = (sx) => {
+    const piv = new THREE.Object3D(); piv.position.set(sx, legH, 0);
+    const thigh = mk(0.17, legH, 0.18, cloth2); thigh.position.y = -legH / 2; piv.add(thigh);
+    const foot = mk(0.18, 0.12, 0.30, dark); foot.position.set(0, -legH + 0.02, 0.06); piv.add(foot);
+    grp.add(piv); return piv;
+  };
+  const llegPivot = mkLeg(-legX), rlegPivot = mkLeg(legX);
+
+  // torso
+  const torso = mk(tw, torsoH, td, cloth); torso.position.y = legH + torsoH / 2; grp.add(torso);
+  if (belly) { const b = mk(tw * 0.9, torsoH * 0.5, td + belly, cloth); b.position.set(0, legH + torsoH * 0.35, 0.04); grp.add(b); }
+
+  // arms (pivot at shoulder)
+  const armX = tw / 2 + aw / 2;
+  const mkArm = (sx) => {
+    const piv = new THREE.Object3D(); piv.position.set(sx, shoulderY - 0.05, 0);
+    const upper = mk(aw, armLen, aw, cloth); upper.position.y = -armLen / 2; piv.add(upper);
+    const hand = mk(aw * 1.1, 0.14, aw * 1.1, skin); hand.position.y = -armLen + 0.02; piv.add(hand);
+    grp.add(piv); return piv;
+  };
+  const larmPivot = mkArm(-armX), rarmPivot = mkArm(armX);
+
+  // neck + head
+  const neck = mk(0.12, 0.1, 0.12, skin); neck.position.y = shoulderY + 0.05; grp.add(neck);
+  const head = mk(headS, headS + 0.04, headS, skin); head.position.y = shoulderY + 0.05 + headS / 2 + 0.05; grp.add(head);
+  // face (on +Z)
+  const fz = headS / 2 + 0.001;
+  const eyeL = mk(0.05, 0.04, 0.02, dark); eyeL.position.set(-0.06, 0.03, fz); head.add(eyeL);
+  const eyeR = eyeL.clone(); eyeR.position.x = 0.06; head.add(eyeR);
+  const nose = mk(0.04, 0.06, 0.04, skin); nose.position.set(0, -0.01, fz); head.add(nose);
+  const mouth = mk(0.10, 0.02, 0.02, dark); mouth.position.set(0, -0.08, fz); head.add(mouth);
+  // hair (cap + back)
+  const cap = mk(headS + 0.03, 0.10, headS + 0.03, hairM); cap.position.set(0, headS / 2 + 0.02, 0); head.add(cap);
+  const back = mk(headS + 0.02, headS * 0.7, 0.06, hairM); back.position.set(0, 0.04, -headS / 2 - 0.01); head.add(back);
+
+  // overall scale for tall/short
+  let s = 1; if (ap.build === "tall") s = 1.15; if (ap.build === "short") s = 0.82;
+  grp.scale.setScalar(s);
+
+  return { grp, parts: { llegPivot, rlegPivot, larmPivot, rarmPivot, head } };
+}
+
+/* Spawn the named principals + ambient residents as walking agents. */
+function spawnPeople(g, id, rnd) {
+  agents = [];
+  const metas = [];
+  for (const def of Engine.npcAt(g, id)) {
+    metas.push({ id: def.id, name: def.name, role: def.role, kind: def.kind,
+      faction: def.faction, district: id, ambient: false, hub: def.hub,
+      appear: People.namedAppearance(def) });
+  }
+  for (const m of People.ambientFor(id)) metas.push(m);
+
+  metas.forEach((meta, i) => {
+    const built = makeHuman(meta.appear);
+    const a = (i / metas.length) * Math.PI * 2 + rnd() * 0.5;
+    const r = 8 + rnd() * 12;
+    built.grp.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+    built.grp.rotation.y = rnd() * Math.PI * 2;
+    scene.add(built.grp);
+
+    // floating name tag
+    const known = (g.met && g.met[meta.id]);
+    const tag = makeLabel(meta.name, meta.ambient ? "#cdbf9a" : "#e6b450");
+    tag.position.set(0, 2.05 / built.grp.scale.x, 0); tag.scale.set(3.4, 0.85, 1);
+    built.grp.add(tag);
+
+    const agent = {
+      meta, grp: built.grp, parts: built.parts,
+      facing: built.grp.rotation.y, target: pickWander(rnd),
+      speed: 1.2 + rnd() * 0.8, phase: rnd() * 6.28, amp: 0,
+      state: "wander", greeted: false,
+    };
+    agents.push(agent);
+
+    // interactable shares the agent's live position
+    interactables.push({
+      type: "npc", label: `Speak with ${meta.name}`, pos: built.grp.position,
+      radius: 3.3, mesh: null, meta, agent,
+      run: () => { openDialogue(meta, agent); return {}; },
+    });
+  });
+}
+
+/* test/debug hooks */
+World._agentCount = () => agents.length;
+World._agentPositions = () => agents.map((a) => [a.grp.position.x.toFixed(2), a.grp.position.z.toFixed(2), a.state]);
+World._openFirstDialogue = () => { if (agents[0]) openDialogue(agents[0].meta, agents[0]); };
+
+function pickWander(rnd) {
+  const r = (rnd ? rnd() : Math.random());
+  const a = (rnd ? rnd() : Math.random()) * Math.PI * 2;
+  const rad = 6 + r * (BOUND - 9);
+  return new THREE.Vector3(Math.cos(a) * rad, 0, Math.sin(a) * rad);
+}
+
+function updateAgents(dt) {
+  const dlgAgent = World._dialog && World._dialog.agent;
+  for (const ag of agents) {
+    const gp = ag.grp.position;
+    const dxp = player.pos.x - gp.x, dzp = player.pos.z - gp.z;
+    const distP = Math.hypot(dxp, dzp);
+    let moving = false, targetFacing = ag.facing;
+
+    if (ag === dlgAgent || distP < REACT) {
+      // react to your approach: stop and turn to face you
+      ag.state = "react";
+      targetFacing = Math.atan2(dxp, dzp);
+      if (!ag.greeted) ag.greeted = true;
+    } else {
+      ag.state = "wander";
+      const dx = ag.target.x - gp.x, dz = ag.target.z - gp.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 1.0) { ag.target = pickWander(); }
+      else {
+        const step = ag.speed * dt;
+        gp.x += (dx / d) * step; gp.z += (dz / d) * step;
+        moving = true; targetFacing = Math.atan2(dx, dz);
+      }
+    }
+
+    // smooth turn
+    let df = targetFacing - ag.facing;
+    while (df > Math.PI) df -= Math.PI * 2; while (df < -Math.PI) df += Math.PI * 2;
+    ag.facing += df * Math.min(1, dt * 8);
+    ag.grp.rotation.y = ag.facing;
+
+    // limb swing (natural arm-leg counter-swing while walking)
+    const targetAmp = moving ? 0.55 : 0;
+    ag.amp += (targetAmp - ag.amp) * Math.min(1, dt * 6);
+    ag.phase += dt * ag.speed * 5.5;
+    const sw = Math.sin(ag.phase) * ag.amp;
+    ag.parts.llegPivot.rotation.x = sw;
+    ag.parts.rlegPivot.rotation.x = -sw;
+    ag.parts.larmPivot.rotation.x = -sw;
+    ag.parts.rarmPivot.rotation.x = sw;
+  }
+}
+
 function placeStation(s, x, z, theme) {
-  const h = s.type === "npc" ? 1.8 : 1.2;
+  const h = 1.2;
   const m = box(1.1, h, 1.1, s.color, x, h / 2, z, {
     emissive: s.color, ei: 0.25, rough: 0.6,
   });
-  if (s.type === "npc") { // a "head"
-    box(0.7, 0.7, 0.7, 0xe8d8b8, x, h + 0.35, z, { emissive: 0x221a10, ei: 0.4 });
-  }
   light(s.color, 6, x, 2.4, z, 9);
   const lbl = makeLabel(s.label, "#" + new THREE.Color(s.color).getHexString());
   lbl.position.set(x, h + 1.2, z);
@@ -388,7 +556,8 @@ const THEMES = {
 /* main loop                                                                */
 function loop() {
   const dt = Math.min(clock.getDelta(), 0.05);
-  if (started && !panelsOpen()) updateMovement(dt);
+  if (started && !panelsOpen() && !dialogOpen()) updateMovement(dt);
+  if (started) updateAgents(dt);
 
   // camera orientation
   camera.position.copy(player.pos);
@@ -597,6 +766,82 @@ function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.
 function revelationModal() {
   UI.modal(`<h2>Recognition</h2><p style="font-style:italic">${AXIOM.REVELATION}</p>
     <p class="muted small">The narrative goal was never catharsis. It was understanding something true about power, time, and what it costs to be a person inside history.</p>`);
+}
+
+/* ======================================================================== */
+/* DIALOGUE — Friendly / Neutral / Trade, with contextual lines & memory.   */
+function dialogOpen() { return !document.getElementById("dialog").hidden; }
+
+function openDialogue(meta, agent) {
+  World._dialog = { meta, agent };
+  if (document.pointerLockElement) document.exitPointerLock();
+  document.getElementById("dialog").hidden = false;
+  drawPortrait(meta.appear);
+  renderDialog(true);
+}
+
+function renderDialog(greeting) {
+  const g = State.data, d = World._dialog; if (!d) return;
+  const meta = d.meta;
+  const rec = Engine.ensureNPC(g, meta.id);
+  document.getElementById("dlg-name").textContent = meta.name;
+  const pers = People.personality(meta.kind);
+  document.getElementById("dlg-role").textContent =
+    `${meta.role} · ${AXIOM.FACTIONS[meta.faction] || "Unaffiliated"} — ${pers}`;
+
+  // standing with this person + their faction
+  const tierName = ["marked", "disliked", "known to", "trusted by", "honored by"];
+  const t = rec.disp > 50 ? 4 : rec.disp > 15 ? 3 : rec.disp > -15 ? 2 : rec.disp > -50 ? 1 : 0;
+  const tc = ["#d9534f", "#e0a046", "#8a7f6e", "#6fcf6f", "#6fcf6f"][t];
+  const fr = Engine.factionRep(g, meta.faction);
+  document.getElementById("dlg-standing").innerHTML =
+    `<span class="tier" style="color:${tc}">${tierName[t]} them (${rec.disp})</span>
+     <span class="muted" style="margin-left:8px">faction standing: ${fr}</span>`;
+
+  const line = greeting ? People.pickGreet(meta.kind, rec.disp) : (d.lastLine || "");
+  document.getElementById("dlg-line").textContent = line;
+
+  const tradeBtn = document.getElementById("dlg-trade");
+  tradeBtn.disabled = !(AXIOM.MARKETS[g.here] || []).length;
+}
+
+function chooseDialog(mode) {
+  const g = State.data, d = World._dialog; if (!d || g.over) return;
+  const res = Actions.converse(g, d.meta, mode);
+  d.lastLine = res.line;
+  document.getElementById("dlg-line").textContent = res.line;
+  renderDialog(false);
+  World.updateHUD();
+  State.save();
+  if (res.openMarket && mode === "Trade") { closeDialog(); World.togglePanels(true); World.showPanel("market"); }
+}
+
+function closeDialog() {
+  document.getElementById("dialog").hidden = true;
+  World._dialog = null;
+}
+
+/* A simple front-view portrait drawn from the body's colours. */
+function drawPortrait(ap) {
+  const c = document.getElementById("dlg-portrait"); if (!c) return;
+  const x = c.getContext("2d");
+  x.clearRect(0, 0, 96, 120);
+  const hex = (n) => "#" + n.toString(16).padStart(6, "0");
+  let tw = 30, head = 24;
+  if (ap.build === "thin") tw = 22; if (ap.build === "muscular") tw = 38; if (ap.build === "fat") tw = 44;
+  const cx = 48;
+  // legs
+  x.fillStyle = hex(ap.cloth2); x.fillRect(cx - tw / 2 + 3, 78, tw / 2 - 4, 36); x.fillRect(cx + 2, 78, tw / 2 - 4, 36);
+  // torso
+  x.fillStyle = hex(ap.cloth); x.fillRect(cx - tw / 2, 44, tw, 38);
+  // arms
+  x.fillRect(cx - tw / 2 - 8, 46, 8, 34); x.fillRect(cx + tw / 2, 46, 8, 34);
+  // head
+  x.fillStyle = hex(ap.skin); x.fillRect(cx - head / 2, 16, head, head + 4);
+  // hair
+  x.fillStyle = hex(ap.hair); x.fillRect(cx - head / 2 - 1, 12, head + 2, 9);
+  // eyes
+  x.fillStyle = "#14100c"; x.fillRect(cx - 6, 26, 3, 3); x.fillRect(cx + 3, 26, 3, 3);
 }
 
 })(); // end World3D IIFE

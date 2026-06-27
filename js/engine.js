@@ -41,14 +41,14 @@ Engine.push = function (g, text, kind) {
  * Social-hub weight controls how far an opinion of you propagates.
  * ========================================================================== */
 Engine.NPC_DEFS = [
-  { id: "arbiter",  name: "Guild Arbiter Semra",  district: "hanging_market", role: "lead market arbiter",        hub: 0.9 },
-  { id: "priest",   name: "Junior Priest Eshu",   district: "ziggurat_crown", role: "temple acolyte's superior", hub: 0.6 },
-  { id: "warlord",  name: "Matron Kol",           district: "ironwall",       role: "warlord matriarch",          hub: 0.85 },
-  { id: "councilor",name: "Councilor Ditu",       district: "broken_crown",   role: "neighborhood councilor",     hub: 0.8 },
-  { id: "fixer",    name: "The Fixer Vane",       district: "neon_labyrinth", role: "augmentation fixer",         hub: 0.7 },
-  { id: "exec",     name: "Director Aldous",      district: "spire",          role: "Meridian director",          hub: 0.75 },
-  { id: "guide",    name: "Old Pell",             district: "sub_strata",     role: "Sub-Strata map-keeper",      hub: 0.5 },
-  { id: "doctor",   name: "Doctor Wren",          district: "broken_crown",   role: "informal-network physician", hub: 0.55 },
+  { id: "arbiter",  name: "Guild Arbiter Semra",  district: "hanging_market", role: "lead market arbiter",        hub: 0.9,  kind: "arbiter",   faction: "guild" },
+  { id: "priest",   name: "Junior Priest Eshu",   district: "ziggurat_crown", role: "temple acolyte's superior", hub: 0.6,  kind: "priest",    faction: "temple" },
+  { id: "warlord",  name: "Matron Kol",           district: "ironwall",       role: "warlord matriarch",          hub: 0.85, kind: "warlord",   faction: "ironwall" },
+  { id: "councilor",name: "Councilor Ditu",       district: "broken_crown",   role: "neighborhood councilor",     hub: 0.8,  kind: "councilor", faction: "broken_crown" },
+  { id: "fixer",    name: "The Fixer Vane",       district: "neon_labyrinth", role: "augmentation fixer",         hub: 0.7,  kind: "fixer",     faction: "street" },
+  { id: "exec",     name: "Director Aldous",      district: "spire",          role: "Meridian director",          hub: 0.75, kind: "exec",      faction: "corporate" },
+  { id: "guide",    name: "Old Pell",             district: "sub_strata",     role: "Sub-Strata map-keeper",      hub: 0.5,  kind: "guide",     faction: "substrata" },
+  { id: "doctor",   name: "Doctor Wren",          district: "broken_crown",   role: "informal-network physician", hub: 0.55, kind: "medic",     faction: "broken_crown" },
 ];
 
 Engine.seedNPCs = function (g) {
@@ -59,6 +59,51 @@ Engine.seedNPCs = function (g) {
 
 Engine.npcAt = function (g, district) {
   return Engine.NPC_DEFS.filter((d) => d.district === district);
+};
+
+/* Ensure a memory record exists for any NPC (named or generated ambient). */
+Engine.ensureNPC = function (g, id) {
+  if (!g.npc[id]) g.npc[id] = { disp: 0, mem: [] };
+  return g.npc[id];
+};
+
+/* Faction standing — your relationship with the organisation behind a person. */
+Engine.factionRep = function (g, faction) {
+  if (!g.factionRep) g.factionRep = {};
+  return g.factionRep[faction] || 0;
+};
+Engine.shiftFaction = function (g, faction, delta) {
+  if (!faction || faction === "none") return;
+  if (!g.factionRep) g.factionRep = {};
+  g.factionRep[faction] = Engine.clamp((g.factionRep[faction] || 0) + delta, -100, 100);
+};
+
+/* Generalised memory for any NPC, with optional social propagation for hubs. */
+Engine.rememberMeta = function (g, meta, delta, note) {
+  const rec = Engine.ensureNPC(g, meta.id);
+  rec.disp = Engine.clamp(rec.disp + delta, -100, 100);
+  rec.mem.push({ day: g.day, delta, note });
+  if (rec.mem.length > 12) rec.mem.shift();
+
+  const hub = meta.hub || 0.25;
+  if (meta.district) g.rep[meta.district] = Engine.clamp((g.rep[meta.district] || 0) + Math.round(delta * hub), -100, 100);
+  Engine.shiftFaction(g, meta.faction, Math.round(delta * (0.5 + hub * 0.5)));
+
+  // Named hubs propagate strong opinions through the social network.
+  if (Math.abs(delta) >= 8 && hub >= 0.5) {
+    for (const other of Engine.NPC_DEFS) {
+      if (other.id === meta.id) continue;
+      const reach = hub * other.hub * (other.district === meta.district ? 1 : 0.35);
+      if (reach < 0.2) continue;
+      const bias = g.npc[other.id].disp >= 0 ? 1 : 0.5;
+      const echo = Math.round(delta * reach * bias * 0.5);
+      if (echo !== 0) {
+        g.npc[other.id].disp = Engine.clamp(g.npc[other.id].disp + echo, -100, 100);
+        g.rep[other.district] = Engine.clamp(g.rep[other.district] + Math.round(echo * 0.4), -100, 100);
+      }
+    }
+    if (note) Engine.push(g, `Word of this will travel: ${note}`, "rep");
+  }
 };
 
 /* An NPC remembers an interaction; emotionally weighty events propagate to

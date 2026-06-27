@@ -61,6 +61,27 @@
     </section>
   </div>
 
+  <!-- dialogue overlay -->
+  <div id="dialog" class="modal" hidden>
+    <div class="dlg-box">
+      <div class="dlg-head">
+        <canvas id="dlg-portrait" width="96" height="120"></canvas>
+        <div class="dlg-id">
+          <h2 id="dlg-name"></h2>
+          <div id="dlg-role" class="muted"></div>
+          <div id="dlg-standing"></div>
+        </div>
+      </div>
+      <p id="dlg-line"></p>
+      <div class="dlg-choices">
+        <button id="dlg-friendly" class="dlg-c friendly">Friendly</button>
+        <button id="dlg-neutral" class="dlg-c neutral">Neutral</button>
+        <button id="dlg-trade" class="dlg-c trade">Trade</button>
+      </div>
+      <button id="dlg-leave" class="ghost">Walk away (E)</button>
+    </div>
+  </div>
+
   <!-- modal -->
   <div id="modal" class="modal" hidden>
     <div class="modal-box">
@@ -74,13 +95,14 @@
   <!-- Simulation core (classic scripts; shared globals) -->
   <script src="js/data.js"></script>
   <script src="js/engine.js"></script>
+  <script src="js/people.js"></script>
   <script src="js/state.js"></script>
   <script src="js/actions.js"></script>
   <script src="js/ui.js"></script>
   <!-- Bridge lexical globals to window for cross-script access -->
   <script>
     window.AXIOM = AXIOM; window.Engine = Engine; window.State = State;
-    window.Actions = Actions; window.UI = UI;
+    window.Actions = Actions; window.UI = UI; window.People = People;
   </script>
   <!-- 3D world + bootstrap (classic scripts) -->
   <script src="js/world3d.js"></script>

@@ -44,7 +44,9 @@ State.newGame = function (protoId) {
 
     // Reputation per district (-100..100) and per-NPC memory.
     rep: {},
+    factionRep: {},   // faction -> standing (-100..100)
     npc: {},          // id -> {disp, mem:[...], }
+    met: {},          // id -> true once you have spoken with this specific person
 
     inventory: {},    // goodId -> qty
     fragments: [],    // discovered conspiracy fragment ids

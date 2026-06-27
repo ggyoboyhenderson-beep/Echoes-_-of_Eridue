@@ -205,6 +205,49 @@ Actions.talk = function (g, npcId) {
   return Actions._do(g, 1, msg, "talk");
 };
 
+/* ---- CONVERSE: Friendly / Neutral / Trade -------------------------------
+ * Each choice permanently shifts your relationship with this specific person
+ * and their faction. Lines are drawn from a contextual pool by role & mood.
+ * meta: {id, name, role, kind, faction, district, ambient, hub, teaches?}
+ * Returns {line, delta, disp, openMarket}.
+ * -------------------------------------------------------------------------- */
+Actions.converse = function (g, meta, mode) {
+  Engine.ensureNPC(g, meta.id);
+  g.met = g.met || {};
+  g.met[meta.id] = true;
+  const rec = g.npc[meta.id];
+  let delta = 0, openMarket = false, perk = "";
+
+  if (mode === "Friendly") {
+    // A genuine attempt at rapport — rhetoric reads the breaking point.
+    const ck = Engine.check(g, "rhetoric", 45 - Math.round(rec.disp / 4));
+    delta = ck.ok ? 7 : 2;
+    // Named teachers open gated skills / the map once they trust you.
+    if (!meta.ambient) {
+      const teaches = { fixer: "hacking", doctor: "medicine", medic: "medicine", guide: "navigation" };
+      const t = teaches[meta.kind];
+      if (t && rec.disp + delta >= 15 && g.skills[t] && !g.skills[t].known) {
+        Engine.learn(g, t); perk = ` They judge you worth teaching, and open the basics of ${AXIOM.SKILLS[t].name.toLowerCase()} to you.`;
+      }
+      if (meta.kind === "guide" && rec.disp + delta >= 25 && !g.flags.haveMap) {
+        g.flags.haveMap = true; perk = " Old Pell presses a copy of a Sub-Strata map into your hands — a thing of enormous value.";
+      }
+    }
+  } else if (mode === "Trade") {
+    delta = 2;
+    openMarket = (AXIOM.MARKETS[g.here] || []).length > 0;
+  } else { // Neutral
+    delta = rec.disp < 0 ? 1 : 0;
+  }
+
+  Engine.rememberMeta(g, meta, delta, delta >= 7 ? `${meta.name} warms to you` : null);
+  Engine.advance(g, 1);
+
+  const line = People.pickResponse(meta.kind, mode) + perk;
+  Engine.push(g, `${meta.name}: ${line}`, "talk");
+  return { line, delta, disp: g.npc[meta.id].disp, openMarket };
+};
+
 /* ---- READ OMENS (God Quarter only) --------------------------------------- */
 Actions.omen = function (g) {
   if (g.here !== "god_quarter") return { msg: "Omens are read in the God Quarter, where the divine leaves marks.", kind: "warn" };

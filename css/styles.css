@@ -242,3 +242,18 @@ button.mini { padding: 3px 9px; font-size: 12px; }
 .menu-row { display: flex; gap: 8px; margin: 10px 0; }
 #panel-body .logline { font-size: 13px; }
 .reveal { color: var(--gold); font-style: italic; margin-top: 12px; }
+
+/* ---- Dialogue overlay --------------------------------------------------- */
+.dlg-box { background: var(--stone); border: 1px solid var(--cedar); border-radius: 10px; padding: 22px 24px; max-width: 560px; width: 92%; }
+.dlg-head { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; }
+#dlg-portrait { background: #0a0807; border: 1px solid var(--line); border-radius: 6px; }
+.dlg-id h2 { margin: 0; color: var(--sand); font-weight: 400; }
+.dlg-id .muted { font-size: 13px; }
+#dlg-standing { margin-top: 6px; font-size: 12px; }
+#dlg-standing .tier { padding: 1px 8px; border-radius: 10px; border: 1px solid currentColor; }
+#dlg-line { font-size: 16px; font-style: italic; color: var(--text); min-height: 64px; line-height: 1.55; }
+.dlg-choices { display: flex; gap: 8px; margin: 8px 0 12px; }
+.dlg-c { flex: 1; padding: 12px; font-size: 15px; }
+.dlg-c.friendly { border-color: #3a6a3a; } .dlg-c.friendly:hover { background: #2a3a26; }
+.dlg-c.neutral  { border-color: #4a4a5a; }
+.dlg-c.trade    { border-color: #6a5a2a; color: var(--gold); } .dlg-c.trade:hover { background: #3a3020; }
