@@ -218,6 +218,9 @@ Actions.converse = function (g, meta, mode) {
   const rec = g.npc[meta.id];
   let delta = 0, openMarket = false, perk = "";
 
+  // this specific person's temperament colours how the exchange lands
+  const bias = People.modeBias ? People.modeBias(meta.personality, mode) : 1;
+
   if (mode === "Friendly") {
     // A genuine attempt at rapport — rhetoric reads the breaking point.
     const ck = Engine.check(g, "rhetoric", 45 - Math.round(rec.disp / 4));
@@ -240,10 +243,11 @@ Actions.converse = function (g, meta, mode) {
     delta = rec.disp < 0 ? 1 : 0;
   }
 
+  delta = Math.round(delta * bias);
   Engine.rememberMeta(g, meta, delta, delta >= 7 ? `${meta.name} warms to you` : null);
   Engine.advance(g, 1);
 
-  const line = People.pickResponse(meta.kind, mode) + perk;
+  const line = People.pickResponse(meta, mode) + perk;
   Engine.push(g, `${meta.name}: ${line}`, "talk");
   return { line, delta, disp: g.npc[meta.id].disp, openMarket };
 };

@@ -466,7 +466,11 @@ function makeHuman(ap) {
   };
   const AL = mkArm(-shX), AR = mkArm(shX);
 
-  // ---- neck + head + face + hair ----
+  // ---- neck + head + face + hair (per-person features) ----
+  const browM = new THREE.MeshStandardMaterial({ color: ap.brow != null ? ap.brow : ap.hair, roughness: 0.85 });
+  const eyeColMat = new THREE.MeshStandardMaterial({ color: ap.eye != null ? ap.eye : 0x3a2a18, roughness: 0.35 });
+  const accentMat = new THREE.MeshStandardMaterial({ color: ap.accent != null ? ap.accent : ap.cloth2, roughness: 0.85, map: weave });
+
   const neck = limb(skin, 0.06, 0.07, 0.12); neck.position.y = shoulderY + 0.02; grp.add(neck);
   const head = new THREE.Group(); head.position.y = shoulderY + 0.28; grp.add(head);
   const skull = ballE(skin, 0.16 * 0.92, 0.16 * 1.05, 0.16); head.add(skull);
@@ -475,11 +479,54 @@ function makeHuman(ap) {
   const eyeMat = new THREE.MeshStandardMaterial({ color: 0xf4f0e8, roughness: 0.4 });
   const eyeWhiteL = ballE(eyeMat, 0.035, 0.035, 0.018); eyeWhiteL.position.set(-0.06, 0.02, 0.13); head.add(eyeWhiteL);
   const eyeWhiteR = eyeWhiteL.clone(); eyeWhiteR.position.x = 0.06; head.add(eyeWhiteR);
-  const pupilL = ball(dark, 0.018); pupilL.position.set(-0.06, 0.02, 0.155); head.add(pupilL);
+  const irisL = ball(eyeColMat, 0.022); irisL.position.set(-0.06, 0.02, 0.15); head.add(irisL);
+  const irisR = irisL.clone(); irisR.position.x = 0.06; head.add(irisR);
+  const pupilL = ball(dark, 0.011); pupilL.position.set(-0.06, 0.02, 0.162); head.add(pupilL);
   const pupilR = pupilL.clone(); pupilR.position.x = 0.06; head.add(pupilR);
-  // hair: rounded cap + back volume
-  const cap = ballE(hairM, 0.168, 0.168 * 0.85, 0.168); cap.position.set(0, 0.05, -0.01); head.add(cap);
-  const hairBack = ballE(hairM, 0.15, 0.165, 0.105); hairBack.position.set(0, 0, -0.08); head.add(hairBack);
+  // eyebrows
+  const ebL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.02), browM); ebL.position.set(-0.06, 0.06, 0.15); head.add(ebL);
+  const ebR = ebL.clone(); ebR.position.x = 0.06; head.add(ebR);
+
+  // facial hair
+  if (ap.facial === "beard" || ap.facial === "goatee") {
+    const bd = ballE(hairM, 0.12, ap.facial === "goatee" ? 0.06 : 0.11, 0.1); bd.position.set(0, -0.1, 0.06); head.add(bd);
+  }
+  if (ap.facial === "stubble") { const st = ballE(hairM, 0.115, 0.07, 0.095); st.position.set(0, -0.1, 0.05); st.material = new THREE.MeshStandardMaterial({ color: ap.hair, roughness: 1, transparent: true, opacity: 0.4 }); head.add(st); }
+  if (ap.facial === "mustache" || ap.facial === "beard") { const ms = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.02, 0.02), hairM); ms.position.set(0, -0.045, 0.15); head.add(ms); }
+
+  // hair by style
+  const style = ap.hairStyle || "short";
+  if (style !== "bald") {
+    const cap = ballE(hairM, 0.168, 0.168 * 0.85, 0.168); cap.position.set(0, 0.05, -0.01); head.add(cap);
+    if (style === "short" || style === "cropped") { const b = ballE(hairM, 0.15, 0.12, 0.105); b.position.set(0, 0.01, -0.08); head.add(b); }
+    if (style === "long") { const b = ballE(hairM, 0.16, 0.26, 0.12); b.position.set(0, -0.12, -0.07); head.add(b); }
+    if (style === "wild") { for (let k = 0; k < 5; k++) { const t = ball(hairM, 0.05); t.position.set((Math.random() - 0.5) * 0.28, 0.12 + Math.random() * 0.08, (Math.random() - 0.5) * 0.2); head.add(t); } }
+    if (style === "topknot") { const k = ball(hairM, 0.06); k.position.set(0, 0.2, -0.02); head.add(k); }
+  }
+
+  // headwear
+  const hwMat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8, map: weave });
+  switch (ap.headwear) {
+    case "hood": { const h = ballE(accentMat, 0.2, 0.2, 0.2); h.position.set(0, 0.04, -0.04); head.add(h);
+      const back = ballE(accentMat, 0.18, 0.22, 0.12); back.position.set(0, -0.05, -0.12); head.add(back); break; }
+    case "cap": { const c = ballE(hwMat(shadeHex(ap.cloth, 0.7)), 0.17, 0.09, 0.17); c.position.set(0, 0.12, 0); head.add(c);
+      const brim = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.16), hwMat(shadeHex(ap.cloth, 0.6))); brim.position.set(0, 0.1, 0.13); head.add(brim); break; }
+    case "helmet": { const h = ballE(new THREE.MeshStandardMaterial({ color: 0x6a6660, roughness: 0.4, metalness: 0.6 }), 0.19, 0.2, 0.19); h.position.set(0, 0.04, 0); head.add(h); break; }
+    case "turban": { const tu = ballE(hwMat(ap.accent), 0.2, 0.16, 0.2); tu.position.set(0, 0.1, 0); head.add(tu); break; }
+    case "veil": { const v = ballE(accentMat, 0.19, 0.24, 0.16); v.position.set(0, -0.02, -0.06); v.material.transparent = true; v.material.opacity = 0.85; head.add(v); break; }
+    case "fur": { const f = ballE(hwMat(0x4a3a28), 0.21, 0.16, 0.21); f.position.set(0, 0.12, 0); head.add(f); break; }
+    case "skullcap": { const sc = ballE(hwMat(ap.accent), 0.165, 0.1, 0.165); sc.position.set(0, 0.13, 0); head.add(sc); break; }
+    case "visor": { const v = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.07, 0.06), new THREE.MeshStandardMaterial({ color: 0x101018, emissive: ap.accent, emissiveIntensity: 0.8 })); v.position.set(0, 0.03, 0.15); head.add(v); break; }
+    case "earpiece": { const e = ball(new THREE.MeshStandardMaterial({ color: 0x202028, emissive: 0x38d0c8, emissiveIntensity: 0.6 }), 0.03); e.position.set(0.15, 0, 0.04); head.add(e); break; }
+    case "lamp": { const l = ball(new THREE.MeshStandardMaterial({ color: 0x4dff9a, emissive: 0x4dff9a, emissiveIntensity: 1.4 }), 0.04); l.position.set(0, 0.14, 0.12); head.add(l); break; }
+    case "mohawk": { for (let k = 0; k < 4; k++) { const m = ballE(hwMat(ap.accent), 0.03, 0.12, 0.05); m.position.set(0, 0.16, 0.06 - k * 0.05); head.add(m); } break; }
+    case "scarf": { const s = ballE(accentMat, 0.18, 0.1, 0.18); s.position.set(0, 0.04, -0.04); head.add(s); break; }
+  }
+
+  // neck scarf
+  if (ap.scarf) { const sc = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.1, 10), accentMat); sc.position.y = shoulderY - 0.02; grp.add(sc); }
+  // back cloak
+  if (ap.cloak) { const ck = new THREE.Mesh(new THREE.BoxGeometry(chest * 2.2, torsoH + 0.5, 0.08), accentMat); ck.position.set(0, hipY + torsoH / 2, -chest - 0.05); ck.castShadow = false; grp.add(ck); }
 
   grp.add(contactShadow());
 
@@ -504,6 +551,7 @@ function spawnPeople(g, id, rnd) {
   for (const def of Engine.npcAt(g, id)) {
     metas.push({ id: def.id, name: def.name, role: def.role, kind: def.kind,
       faction: def.faction, district: id, ambient: false, hub: def.hub,
+      originName: "Ur-Axiom", personality: People.namedPersonality(def.id),
       appear: People.namedAppearance(def) });
   }
   for (const m of People.ambientFor(id)) metas.push(m);
@@ -583,7 +631,8 @@ function changeFloor(target) {
 function namedMeta(id, district) {
   const def = Engine.NPC_DEFS.find((d) => d.id === id); if (!def) return null;
   return { id: def.id, name: def.name, role: def.role, kind: def.kind, faction: def.faction,
-    district, ambient: false, hub: def.hub, appear: People.namedAppearance(def) };
+    district, ambient: false, hub: def.hub, originName: "Ur-Axiom",
+    personality: People.namedPersonality(def.id), appear: People.namedAppearance(def) };
 }
 
 /* Interior blueprints. Every room states why it exists and gives you something
@@ -761,7 +810,7 @@ World._floor = () => currentFloor;
 World._inInterior = () => inInterior;
 World._inspect = (i) => { const a = agents[i || 0]; if (!a) return; a.grp.position.set(0, 0, 0);
   a.state = "frozen"; a.facing = a.grp.rotation.y = Math.PI * 0.82;
-  player.pos.set(0, 1.5, 6.8); yaw = Math.PI; pitch = -0.12; };
+  player.pos.set(0, 1.62, 3.3); yaw = Math.PI; pitch = -0.06; };
 
 World._bbox = (i) => {
   const a = agents[i || 0]; if (!a) return null;
@@ -1414,9 +1463,10 @@ function renderDialog(greeting) {
   const rec = Engine.ensureNPC(g, meta.id);
   document.getElementById("dlg-name").innerHTML =
     `<span class="sigil">${Art.sigil(meta.faction)}</span>${meta.name}`;
-  const pers = People.personality(meta.kind);
+  const pers = People.personality(meta);
+  const origin = meta.originName && meta.originName !== "Ur-Axiom" ? ` · of ${meta.originName}` : "";
   document.getElementById("dlg-role").textContent =
-    `${meta.role} · ${AXIOM.FACTIONS[meta.faction] || "Unaffiliated"} — ${pers}`;
+    `${meta.role} · ${AXIOM.FACTIONS[meta.faction] || "Unaffiliated"}${origin} — ${pers}`;
 
   // standing with this person + their faction
   const tierName = ["marked", "disliked", "known to", "trusted by", "honored by"];
@@ -1427,7 +1477,7 @@ function renderDialog(greeting) {
     `<span class="tier" style="color:${tc}">${tierName[t]} them (${rec.disp})</span>
      <span class="muted" style="margin-left:8px">faction standing: ${fr}</span>`;
 
-  const line = greeting ? People.pickGreet(meta.kind, rec.disp) : (d.lastLine || "");
+  const line = greeting ? People.pickGreet(meta, rec.disp) : (d.lastLine || "");
   document.getElementById("dlg-line").textContent = line;
 
   const tradeBtn = document.getElementById("dlg-trade");

@@ -44,20 +44,48 @@ People.districtKinds = {
 /* ---- appearance palettes ------------------------------------------------ */
 AXIOM.BODY = {
   builds: ["thin", "muscular", "fat", "tall", "short", "average", "average"],
-  skin: [0xf2c9a0, 0xe0a878, 0xc88a55, 0xa9683c, 0x8a5a30, 0x6e451f, 0x4d2e16, 0xf6d4b8, 0x7a4a28],
-  hair: [0x1a1410, 0x2a1f16, 0x4a3320, 0x6e4a28, 0x8a6a3a, 0xb0902a, 0xc8c8c8, 0x8a8a8a, 0x101010, 0x5a2a1a],
+  skin: [0xf6d4b8, 0xf2c9a0, 0xe8b888, 0xe0a878, 0xc88a55, 0xb07845, 0xa9683c, 0x8a5a30, 0x7a4a28, 0x6e451f, 0x5a3618, 0x4d2e16],
+  hair: [0x0e0a08, 0x1a1410, 0x2a1f16, 0x3a2818, 0x4a3320, 0x6e4a28, 0x8a6a3a, 0xb0902a, 0xd8c068, 0xc8c8c8, 0x9a9a9a, 0x6a6a6a, 0x5a2a1a, 0x7a3a1a],
+  eye: [0x3a2a18, 0x5a3a1a, 0x4a6a3a, 0x3a5a7a, 0x6a6a7a, 0x2a2a2a, 0x7a5a2a],
+  hairStyles: ["short", "short", "cropped", "long", "topknot", "bald", "wild"],
+  facial: ["none", "none", "none", "stubble", "beard", "mustache", "goatee"],
   // clothing palettes keyed by faction/role
   cloth: {
-    temple:   [0xcdb892, 0xb8a070, 0xa8946a, 0xe6d8b0],
-    guild:    [0x9a4a2a, 0x3a6a8a, 0x7a6a3a, 0x8a3a5a],
-    ironwall: [0x33312e, 0x2a2c34, 0x4a3020, 0x222020],
-    broken_crown: [0x6a5236, 0x7a5a3a, 0x4a5a4a, 0x5a4a6a, 0x7a3a3a],
-    street:   [0x1a1a26, 0x38d0c8, 0xff5c7a, 0xc850ff, 0x2a2a3a],
-    corporate:[0xeaf0f6, 0xc8d0da, 0x2a3a4a, 0x9aaaba],
-    substrata:[0x14181c, 0x2a3a2a, 0x1a2a1a, 0x3a3a2a],
-    steppe:   [0x7a5a3a, 0x9a7a4a, 0x5a6a4a, 0x8a6a5a],
+    temple:   [0xcdb892, 0xb8a070, 0xa8946a, 0xe6d8b0, 0xd8c8a0],
+    guild:    [0x9a4a2a, 0x3a6a8a, 0x7a6a3a, 0x8a3a5a, 0xb0762a],
+    ironwall: [0x33312e, 0x2a2c34, 0x4a3020, 0x222020, 0x3a2a1a],
+    broken_crown: [0x6a5236, 0x7a5a3a, 0x4a5a4a, 0x5a4a6a, 0x7a3a3a, 0x4a6a5a],
+    street:   [0x1a1a26, 0x38d0c8, 0xff5c7a, 0xc850ff, 0x2a2a3a, 0x50ff9a],
+    corporate:[0xeaf0f6, 0xc8d0da, 0x2a3a4a, 0x9aaaba, 0x445566],
+    substrata:[0x14181c, 0x2a3a2a, 0x1a2a1a, 0x3a3a2a, 0x223028],
+    steppe:   [0x7a5a3a, 0x9a7a4a, 0x5a6a4a, 0x8a6a5a, 0xa0743a],
     none:     [0x555555, 0x665544, 0x4a4a5a],
   },
+  // headwear options weighted per faction
+  headwear: {
+    temple:   ["none", "hood", "veil", "skullcap"],
+    guild:    ["none", "cap", "none", "turban"],
+    ironwall: ["none", "helmet", "hood", "none"],
+    broken_crown: ["none", "cap", "hood", "scarf", "none"],
+    street:   ["none", "visor", "hood", "none", "mohawk"],
+    corporate:["none", "none", "earpiece", "none"],
+    substrata:["hood", "none", "lamp", "scarf"],
+    steppe:   ["fur", "none", "cap", "fur"],
+    none:     ["none", "cap", "hood"],
+  },
+};
+
+/* ---- world regions of origin — all twelve peoples converge on the City --- */
+AXIOM.REGIONS = {
+  ur_basin:    { name: "the Ur Basin",          accent: 0x9a8458, names: ["Aru","Nabu","Gula","Sib","Lir","Ish"] },
+  haze_coast:  { name: "the Haze Coast",        accent: 0x2a4a5a, names: ["Jin","Mei","Tomo","Rei","Kazu","Lin"] },
+  obsidian:    { name: "the Obsidian Highlands",accent: 0x2a2a30, names: ["Garo","Vask","Tana","Eku","Mira","Sosa"] },
+  delta:       { name: "the Delta Provinces",   accent: 0x3a6a4a, names: ["Olu","Ade","Ngozi","Femi","Kona","Aba"] },
+  steppe:      { name: "the Eastern Steppe",    accent: 0x8a6a4a, names: ["Batu","Naran","Oktai","Gerel","Tem","Yesu"] },
+  fracture:    { name: "the Fracture Zone",     accent: 0x4a3a5a, names: ["Cy","Rax","Vex","Nim","Dax","Sol"] },
+  holds:       { name: "the Northern Holds",    accent: 0x3a4a5a, names: ["Asger","Brigid","Knut","Edda","Roald","Sif"] },
+  deep_south:  { name: "the Deep South Kingdoms",accent: 0xb0902a, names: ["Sundi","Keita","Yaa","Diallo","Niama","Touré"] },
+  city:        { name: "Ur-Axiom itself",       accent: 0x7a6048, names: ["Dara","Eshu","Hane","Veka","Sael","Kesh","Tirin","Zin"] },
 };
 
 /* ---- name generation (district-flavoured) ------------------------------- */
@@ -184,18 +212,29 @@ AXIOM.DIALOGUE = {
     Friendly: ["\"Kind of you to stop.\""], Neutral: ["\"Mind how you go.\""], Trade: ["\"Nothing to sell, sorry.\""] },
 };
 
-/* ---- contextual line picker -------------------------------------------- */
+/* ---- contextual line picker --------------------------------------------
+ * Accepts a meta {kind, personality} (or a bare kind string). A warm person
+ * greets more kindly at the same standing; a guarded one more coldly.
+ * -------------------------------------------------------------------------- */
 People.pool = function (kind) { return AXIOM.DIALOGUE[kind] || AXIOM.DIALOGUE._default; };
 People.tier = function (disp) { return disp > 20 ? "friendly" : disp < -20 ? "hostile" : "neutral"; };
-People.pickGreet = function (kind, disp) {
-  const p = People.pool(kind), arr = p.greet[People.tier(disp)] || p.greet.neutral;
+People._kindOf = function (m) { return typeof m === "string" ? m : m.kind; };
+People.pickGreet = function (meta, disp) {
+  const kind = People._kindOf(meta), t = meta && meta.personality;
+  const eff = disp + (t ? t.warmth * 12 : 0);
+  const p = People.pool(kind), arr = p.greet[People.tier(eff)] || p.greet.neutral;
   return arr[(Math.random() * arr.length) | 0];
 };
-People.pickResponse = function (kind, mode) {
-  const p = People.pool(kind), arr = p[mode] || AXIOM.DIALOGUE._default[mode];
+People.pickResponse = function (meta, mode) {
+  const p = People.pool(People._kindOf(meta)), arr = p[mode] || AXIOM.DIALOGUE._default[mode];
   return arr[(Math.random() * arr.length) | 0];
 };
-People.personality = function (kind) { return People.pool(kind).personality || "ordinary"; };
+/* Per-person descriptor if available, else the archetype's stock personality. */
+People.personality = function (meta) {
+  if (meta && meta.personality) return People.personalityDesc(meta.personality);
+  return People.pool(People._kindOf(meta)).personality || "ordinary";
+};
+People.namedPersonality = function (id) { return People.genPersonality(mulberry32(hash("pers:" + id))); };
 
 /* ==========================================================================
  * Deterministic ambient residents per district. Same seed => same people.
@@ -204,38 +243,92 @@ People.personality = function (kind) { return People.pool(kind).personality || "
 function mulberry32(a) { return function () { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 
-People.appearance = function (rnd, faction, kind) {
+People.appearance = function (rnd, faction, kind, origin) {
   const B = AXIOM.BODY;
+  const pick = (a) => a[(rnd() * a.length) | 0];
   // bias build by archetype
-  let build = B.builds[(rnd() * B.builds.length) | 0];
+  let build = pick(B.builds);
   if (kind === "soldier" || kind === "guard") build = rnd() > 0.4 ? "muscular" : "tall";
   if (kind === "vagrant") build = rnd() > 0.5 ? "thin" : "short";
   if (kind === "warlord") build = "muscular";
-  const palette = B.cloth[faction] || B.cloth.none;
+  const palette = (B.cloth[faction] || B.cloth.none).slice();
+  // origin tints one garment with the home region's accent colour
+  const reg = origin && AXIOM.REGIONS[origin];
+  const hats = B.headwear[faction] || B.headwear.none;
+  // facial hair mostly on adult-coded males; keep it varied but plausible
+  let facial = pick(B.facial);
+  const hairStyle = pick(B.hairStyles);
   return {
     build,
-    skin: B.skin[(rnd() * B.skin.length) | 0],
-    hair: B.hair[(rnd() * B.hair.length) | 0],
-    cloth: palette[(rnd() * palette.length) | 0],
-    cloth2: palette[(rnd() * palette.length) | 0],
+    skin: pick(B.skin),
+    hair: pick(B.hair),
+    brow: pick(B.hair),
+    eye: pick(B.eye),
+    cloth: pick(palette),
+    cloth2: reg && rnd() > 0.45 ? reg.accent : pick(palette),
+    accent: reg ? reg.accent : pick(palette),
+    headwear: pick(hats),
+    facial: hairStyle === "bald" && rnd() > 0.5 ? "beard" : facial,
+    hairStyle,
+    cloak: rnd() > 0.72,
+    scarf: rnd() > 0.7,
   };
 };
 
+/* ---- per-person personality ---------------------------------------------
+ * Five traits in [-1,1] derived from the person's own seed, plus a short
+ * descriptor unique to that individual. Drives dialogue tone and reactions.
+ * -------------------------------------------------------------------------- */
+People.PERSONALITY_AXES = ["warmth", "pride", "greed", "nerve", "curiosity"];
+People.genPersonality = function (rnd) {
+  const t = {};
+  for (const a of People.PERSONALITY_AXES) t[a] = +(rnd() * 2 - 1).toFixed(2);
+  return t;
+};
+People.personalityDesc = function (t) {
+  if (!t) return "ordinary";
+  const words = [];
+  words.push(t.warmth > 0.3 ? "warm" : t.warmth < -0.3 ? "guarded" : "even");
+  if (t.pride > 0.4) words.push("proud"); else if (t.pride < -0.4) words.push("humble");
+  if (t.greed > 0.4) words.push("grasping"); else if (t.greed < -0.4) words.push("generous");
+  if (t.nerve > 0.4) words.push("bold"); else if (t.nerve < -0.4) words.push("timid");
+  if (t.curiosity > 0.4) words.push("inquisitive"); else if (t.curiosity < -0.4) words.push("incurious");
+  return words.slice(0, 3).join(", ");
+};
+/* How a personality modulates the disposition gain from a conversation mode. */
+People.modeBias = function (t, mode) {
+  if (!t) return 1;
+  if (mode === "Friendly") return 1 + t.warmth * 0.5 - t.pride * 0.3;
+  if (mode === "Trade") return 1 + t.greed * 0.6;
+  if (mode === "Neutral") return 1 + t.curiosity * 0.2;
+  return 1;
+};
+
+People._regionKeys = Object.keys(AXIOM.REGIONS);
 People.ambientFor = function (district) {
-  const rnd = mulberry32(hash("amb:" + district));
   const kinds = People.districtKinds[district] || ["laborer"];
   const faction = People.districtFaction[district] || "none";
-  const count = 6 + ((rnd() * 4) | 0); // 6..9 residents
+  // seed the population count off the district, but each PERSON gets their own
+  // independent seed so their identity is fully their own and reproducible.
+  const dcount = 9 + ((mulberry32(hash("amb:" + district))() * 6) | 0); // 9..14 residents
   const list = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < dcount; i++) {
+    const rnd = mulberry32(hash(`person:${district}:${i}`));
     const kind = kinds[(rnd() * kinds.length) | 0];
     const fac = kind === "nomad" ? "steppe" : kind === "guard" ? "corporate" : faction;
+    // most residents are city-born; a real minority hail from across the world
+    const origin = rnd() < 0.45 ? "city" : People._regionKeys[(rnd() * People._regionKeys.length) | 0];
+    const reg = AXIOM.REGIONS[origin];
+    const name = reg && origin !== "city" && rnd() > 0.4
+      ? reg.names[(rnd() * reg.names.length) | 0]
+      : People.nameFor(rnd, district);
     list.push({
       id: `amb_${district}_${i}`,
-      name: People.nameFor(rnd, district),
-      role: People.pool(kind).role || "resident",
+      name, role: People.pool(kind).role || "resident",
       kind, faction: fac, district, ambient: true, hub: 0.18,
-      appear: People.appearance(rnd, fac, kind),
+      origin, originName: reg ? reg.name : "Ur-Axiom",
+      personality: People.genPersonality(rnd),
+      appear: People.appearance(rnd, fac, kind, origin),
     });
   }
   return list;
