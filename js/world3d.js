@@ -46,7 +46,8 @@ World.init = function () {
   const canvas = document.getElementById("scene");
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.shadowMap.enabled = false;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -109,22 +110,76 @@ function box(w, h, d, color, x, y, z, opts = {}) {
     color, roughness: opts.rough ?? 0.9, metalness: opts.metal ?? 0.0,
     emissive: opts.emissive ?? 0x000000, emissiveIntensity: opts.ei ?? 1,
   };
-  // Apply a tinted detail texture to surfaces — skip strong glow accents.
+  // Apply a tinted detail texture + normal map to surfaces — skip glow accents.
   const kind = opts.tex !== undefined ? opts.tex : currentBuildKind;
   const glowing = opts.emissive && (opts.ei ?? 1) >= 0.8;
   if (kind && Art && !glowing) {
     const rw = Math.max(1, Math.round((w + d) / 3));
     const rh = Math.max(1, Math.round(h / 2.2));
     matOpts.map = Art.detail(kind, rw, rh);
+    matOpts.normalMap = Art.detailNormal(kind, rw, rh);
+    matOpts.normalScale = new THREE.Vector2(0.8, 0.8);
   }
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial(matOpts));
   m.position.set(x, y, z);
+  if (!glowing) { m.castShadow = true; m.receiveShadow = true; }
   scene.add(m);
   return m;
 }
 function light(color, intensity, x, y, z, dist = 30) {
   const l = new THREE.PointLight(color, intensity, dist, 2);
   l.position.set(x, y, z); scene.add(l); return l;
+}
+function shadeHex(hex, f) {
+  let r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
+  const c = (v) => Math.max(0, Math.min(255, Math.round(v * f)));
+  return (c(r) << 16) | (c(g) << 8) | c(b);
+}
+
+/* Gradient sky dome, a sun or moon disc, and stars at night. */
+function buildSky(theme, g) {
+  if (theme.tex === "fungal") return; // the Sub-Strata is underground; no sky
+
+  const top = theme.skyTop != null ? theme.skyTop : shadeHex(theme.sky, 0.45);
+  const cnv = document.createElement("canvas"); cnv.width = 16; cnv.height = 256;
+  const cx = cnv.getContext("2d"); const grd = cx.createLinearGradient(0, 0, 0, 256);
+  const hx = (n) => "#" + n.toString(16).padStart(6, "0");
+  grd.addColorStop(0, hx(top)); grd.addColorStop(0.6, hx(shadeHex(theme.sky, 0.8))); grd.addColorStop(1, hx(theme.sky));
+  cx.fillStyle = grd; cx.fillRect(0, 0, 16, 256);
+  const skyTex = new THREE.CanvasTexture(cnv);
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(190, 24, 16),
+    new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false })
+  );
+  scene.add(dome);
+
+  const night = Engine.isNight(g);
+  // celestial disc
+  const discC = document.createElement("canvas"); discC.width = discC.height = 64;
+  const dc = discC.getContext("2d"); const rg = dc.createRadialGradient(32, 32, 2, 32, 32, 32);
+  const cc = night ? "230,235,255" : "255,240,200";
+  rg.addColorStop(0, `rgba(${cc},1)`); rg.addColorStop(0.5, `rgba(${cc},0.7)`); rg.addColorStop(1, `rgba(${cc},0)`);
+  dc.fillStyle = rg; dc.fillRect(0, 0, 64, 64);
+  const disc = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(discC), transparent: true, fog: false, depthWrite: false }));
+  disc.scale.set(night ? 16 : 22, night ? 16 : 22, 1);
+  disc.position.set(70, 110, -120);
+  scene.add(disc);
+
+  // stars
+  if (night) {
+    const N = 420, pos = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const u = Math.random() * Math.PI * 2, v = Math.random() * 0.5 + 0.04;
+      const r = 175;
+      pos[i * 3] = Math.cos(u) * Math.cos(v) * r;
+      pos[i * 3 + 1] = Math.sin(v) * r + 10;
+      pos[i * 3 + 2] = Math.sin(u) * Math.cos(v) * r;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const stars = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xdde6ff, size: 0.9, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.9 }));
+    scene.add(stars);
+  }
 }
 function makeLabel(text, color = "#e6b450") {
   const c = document.createElement("canvas"); c.width = 256; c.height = 64;
@@ -153,12 +208,22 @@ World.buildDistrict = function (id, spawnCenter) {
   scene.fog = new THREE.Fog(theme.sky, theme.fogNear, theme.fogFar);
   scene.add(new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, theme.hemiInt));
   const sun = new THREE.DirectionalLight(theme.sun, theme.sunInt);
-  sun.position.set(20, 40, 10); scene.add(sun);
+  sun.position.set(28, 46, 18);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 140;
+  sun.shadow.camera.left = -BOUND - 6; sun.shadow.camera.right = BOUND + 6;
+  sun.shadow.camera.top = BOUND + 6; sun.shadow.camera.bottom = -BOUND - 6;
+  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.02;
+  scene.add(sun);
+
+  // sky dome + celestial body + stars at night
+  buildSky(theme, g);
 
   // ground (procedurally textured per era)
   const groundMat = Art ? Art.groundMaterial(theme) : new THREE.MeshStandardMaterial({ color: theme.ground, roughness: 1 });
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(BOUND * 2 + 8, BOUND * 2 + 8), groundMat);
-  ground.rotation.x = -Math.PI / 2; scene.add(ground);
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 
   // perimeter wall (with gate gaps implied by short height)
   const ph = theme.wallH;
@@ -230,66 +295,110 @@ let agents = [];
 const REACT = 7.5;        // distance at which a person notices and turns to you
 
 /* Build a humanoid from torso/head/limbs with varied proportions. */
+/* Shared low-poly primitives — rounded, not boxy. */
+const GEO = {
+  sphere: new THREE.SphereGeometry(1, 14, 12),
+  cyl: new THREE.CylinderGeometry(1, 1, 1, 14),     // unit, scaled per part
+};
+function meshOf(geo, mat, shadow) {
+  const m = new THREE.Mesh(geo, mat);
+  if (shadow !== false) { m.castShadow = true; m.receiveShadow = true; }
+  return m;
+}
+/* a tapered limb segment (cylinder) from radius rTop..rBot over length len */
+function limb(mat, rTop, rBot, len) {
+  const g = new THREE.CylinderGeometry(rTop, rBot, len, 12);
+  return meshOf(g, mat);
+}
+function ball(mat, r) { const m = meshOf(GEO.sphere, mat); m.scale.setScalar(r); return m; }
+function ballE(mat, rx, ry, rz) { const m = meshOf(GEO.sphere, mat); m.scale.set(rx, ry, rz); return m; }
+
 function makeHuman(ap) {
   const grp = new THREE.Group();
   const weave = Art ? Art.detail("cloth", 2, 3) : null;
-  const skin = new THREE.MeshStandardMaterial({ color: ap.skin, roughness: 0.85 });
-  const hairM = new THREE.MeshStandardMaterial({ color: ap.hair, roughness: 0.9 });
-  const cloth = new THREE.MeshStandardMaterial({ color: ap.cloth, roughness: 0.95, map: weave });
-  const cloth2 = new THREE.MeshStandardMaterial({ color: ap.cloth2, roughness: 0.95, map: weave });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x14100c, roughness: 0.6 });
-  const mk = (w, h, d, mat) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  const skin = new THREE.MeshStandardMaterial({ color: ap.skin, roughness: 0.7 });
+  const hairM = new THREE.MeshStandardMaterial({ color: ap.hair, roughness: 0.85 });
+  const cloth = new THREE.MeshStandardMaterial({ color: ap.cloth, roughness: 0.9, map: weave });
+  const cloth2 = new THREE.MeshStandardMaterial({ color: ap.cloth2, roughness: 0.9, map: weave });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x140f0b, roughness: 0.6 });
+  const belt = new THREE.MeshStandardMaterial({ color: shadeHex(ap.cloth2, 0.55), roughness: 0.7 });
 
-  // proportions by build
-  let tw = 0.42, td = 0.24, aw = 0.13, belly = 0;
-  if (ap.build === "thin")     { tw = 0.34; td = 0.20; aw = 0.11; }
-  if (ap.build === "muscular") { tw = 0.52; td = 0.30; aw = 0.17; }
-  if (ap.build === "fat")      { tw = 0.56; td = 0.40; aw = 0.15; belly = 0.18; }
-  const legH = 0.82, torsoH = 0.66, headS = 0.26, armLen = 0.60;
-  const shoulderY = legH + torsoH;
+  // proportions by build (radii, not box widths) — kept slender so they read human
+  let chest = 0.155, waist = 0.12, arm = 0.05, leg = 0.072, belly = 0;
+  if (ap.build === "thin")     { chest = 0.13;  waist = 0.10; arm = 0.043; leg = 0.062; }
+  if (ap.build === "muscular") { chest = 0.185; waist = 0.135; arm = 0.066; leg = 0.086; }
+  if (ap.build === "fat")      { chest = 0.20;  waist = 0.20; arm = 0.058; leg = 0.088; belly = 0.07; }
+  const thighL = 0.50, shinL = 0.46, upArmL = 0.36, foreL = 0.34;
+  const hipY = thighL + shinL + 0.1;          // pelvis height
+  const torsoH = 0.62, shoulderY = hipY + torsoH;
 
-  // legs (pivot at hip so they can swing)
-  const legX = tw * 0.28;
+  // ---- pelvis ----
+  const pelvis = limb(cloth2, waist * 1.05, waist, 0.2); pelvis.position.y = hipY; grp.add(pelvis);
+  const beltR = meshOf(new THREE.CylinderGeometry(waist * 1.1, waist * 1.1, 0.06, 14), belt); beltR.position.y = hipY + 0.1; grp.add(beltR);
+
+  // ---- legs: hip pivot -> thigh, knee ball, shin, foot ----
+  const legX = waist * 0.6;
   const mkLeg = (sx) => {
-    const piv = new THREE.Object3D(); piv.position.set(sx, legH, 0);
-    const thigh = mk(0.17, legH, 0.18, cloth2); thigh.position.y = -legH / 2; piv.add(thigh);
-    const foot = mk(0.18, 0.12, 0.30, dark); foot.position.set(0, -legH + 0.02, 0.06); piv.add(foot);
-    grp.add(piv); return piv;
+    const piv = new THREE.Object3D(); piv.position.set(sx, hipY, 0); grp.add(piv);
+    const thigh = limb(cloth2, leg, leg * 0.8, thighL); thigh.position.y = -thighL / 2; piv.add(thigh);
+    const knee = ball(cloth2, leg * 0.85); knee.position.y = -thighL; piv.add(knee);
+    const shinPiv = new THREE.Object3D(); shinPiv.position.y = -thighL; piv.add(shinPiv);
+    const shin = limb(cloth2, leg * 0.75, leg * 0.55, shinL); shin.position.y = -shinL / 2; shinPiv.add(shin);
+    const ankle = ball(skin, leg * 0.5); ankle.position.y = -shinL; shinPiv.add(ankle);
+    const foot = meshOf(new THREE.BoxGeometry(leg * 1.4, 0.08, 0.28), dark); foot.position.set(0, -shinL - 0.035, 0.08); shinPiv.add(foot);
+    return { piv, knee: shinPiv };
   };
-  const llegPivot = mkLeg(-legX), rlegPivot = mkLeg(legX);
+  const L = mkLeg(-legX), R = mkLeg(legX);
 
-  // torso
-  const torso = mk(tw, torsoH, td, cloth); torso.position.y = legH + torsoH / 2; grp.add(torso);
-  if (belly) { const b = mk(tw * 0.9, torsoH * 0.5, td + belly, cloth); b.position.set(0, legH + torsoH * 0.35, 0.04); grp.add(b); }
+  // ---- torso (tapered shoulders->waist), subtle chest & optional belly ----
+  const torso = limb(cloth, chest, waist, torsoH); torso.position.y = hipY + torsoH / 2; grp.add(torso);
+  const cb = chest * 0.96;
+  const chestBall = ballE(cloth, cb, cb * 0.66, cb * 0.72); chestBall.position.set(0, shoulderY - 0.14, 0.01); grp.add(chestBall);
+  if (belly) { const wb = waist + belly; const b = ballE(cloth, wb, wb * 0.7, wb * 0.95); b.position.set(0, hipY + 0.16, 0.03); grp.add(b); }
+  // shoulder yoke
+  const yoke = ballE(cloth, chest * 1.25, chest * 0.4, chest * 0.7); yoke.position.y = shoulderY - 0.05; grp.add(yoke);
 
-  // arms (pivot at shoulder)
-  const armX = tw / 2 + aw / 2;
+  // ---- arms: shoulder ball -> upper -> elbow -> forearm -> hand ----
+  const shX = chest + arm * 0.7;
   const mkArm = (sx) => {
-    const piv = new THREE.Object3D(); piv.position.set(sx, shoulderY - 0.05, 0);
-    const upper = mk(aw, armLen, aw, cloth); upper.position.y = -armLen / 2; piv.add(upper);
-    const hand = mk(aw * 1.1, 0.14, aw * 1.1, skin); hand.position.y = -armLen + 0.02; piv.add(hand);
-    grp.add(piv); return piv;
+    const piv = new THREE.Object3D(); piv.position.set(sx, shoulderY - 0.06, 0); grp.add(piv);
+    const shoulder = ball(cloth, arm * 1.25); piv.add(shoulder);
+    const upper = limb(cloth, arm, arm * 0.9, upArmL); upper.position.y = -upArmL / 2; piv.add(upper);
+    const elbowPiv = new THREE.Object3D(); elbowPiv.position.y = -upArmL; piv.add(elbowPiv);
+    const elbow = ball(cloth, arm * 0.95); elbowPiv.add(elbow);
+    const fore = limb(skin, arm * 0.85, arm * 0.7, foreL); fore.position.y = -foreL / 2; elbowPiv.add(fore);
+    const hand = ballE(skin, arm * 1.1, arm * 1.32, arm * 0.77); hand.position.y = -foreL - 0.02; elbowPiv.add(hand);
+    return { piv, elbow: elbowPiv };
   };
-  const larmPivot = mkArm(-armX), rarmPivot = mkArm(armX);
+  const AL = mkArm(-shX), AR = mkArm(shX);
 
-  // neck + head
-  const neck = mk(0.12, 0.1, 0.12, skin); neck.position.y = shoulderY + 0.05; grp.add(neck);
-  const head = mk(headS, headS + 0.04, headS, skin); head.position.y = shoulderY + 0.05 + headS / 2 + 0.05; grp.add(head);
-  // face (on +Z)
-  const fz = headS / 2 + 0.001;
-  const eyeL = mk(0.05, 0.04, 0.02, dark); eyeL.position.set(-0.06, 0.03, fz); head.add(eyeL);
-  const eyeR = eyeL.clone(); eyeR.position.x = 0.06; head.add(eyeR);
-  const nose = mk(0.04, 0.06, 0.04, skin); nose.position.set(0, -0.01, fz); head.add(nose);
-  const mouth = mk(0.10, 0.02, 0.02, dark); mouth.position.set(0, -0.08, fz); head.add(mouth);
-  // hair (cap + back)
-  const cap = mk(headS + 0.03, 0.10, headS + 0.03, hairM); cap.position.set(0, headS / 2 + 0.02, 0); head.add(cap);
-  const back = mk(headS + 0.02, headS * 0.7, 0.06, hairM); back.position.set(0, 0.04, -headS / 2 - 0.01); head.add(back);
+  // ---- neck + head + face + hair ----
+  const neck = limb(skin, 0.06, 0.07, 0.12); neck.position.y = shoulderY + 0.02; grp.add(neck);
+  const head = new THREE.Group(); head.position.y = shoulderY + 0.28; grp.add(head);
+  const skull = ballE(skin, 0.16 * 0.92, 0.16 * 1.05, 0.16); head.add(skull);
+  const jaw = ballE(skin, 0.12 * 0.9, 0.12 * 0.8, 0.12 * 0.95); jaw.position.set(0, -0.08, 0.02); head.add(jaw);
+  const nose = ball(skin, 0.035); nose.position.set(0, -0.02, 0.15); head.add(nose);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xf4f0e8, roughness: 0.4 });
+  const eyeWhiteL = ballE(eyeMat, 0.035, 0.035, 0.018); eyeWhiteL.position.set(-0.06, 0.02, 0.13); head.add(eyeWhiteL);
+  const eyeWhiteR = eyeWhiteL.clone(); eyeWhiteR.position.x = 0.06; head.add(eyeWhiteR);
+  const pupilL = ball(dark, 0.018); pupilL.position.set(-0.06, 0.02, 0.155); head.add(pupilL);
+  const pupilR = pupilL.clone(); pupilR.position.x = 0.06; head.add(pupilR);
+  // hair: rounded cap + back volume
+  const cap = ballE(hairM, 0.168, 0.168 * 0.85, 0.168); cap.position.set(0, 0.05, -0.01); head.add(cap);
+  const hairBack = ballE(hairM, 0.15, 0.165, 0.105); hairBack.position.set(0, 0, -0.08); head.add(hairBack);
 
   // overall scale for tall/short
-  let s = 1; if (ap.build === "tall") s = 1.15; if (ap.build === "short") s = 0.82;
+  let s = 1; if (ap.build === "tall") s = 1.16; if (ap.build === "short") s = 0.84;
   grp.scale.setScalar(s);
 
-  return { grp, parts: { llegPivot, rlegPivot, larmPivot, rarmPivot, head } };
+  return {
+    grp,
+    parts: {
+      llegPivot: L.piv, rlegPivot: R.piv, lknee: L.knee, rknee: R.knee,
+      larmPivot: AL.piv, rarmPivot: AR.piv, lelbow: AL.elbow, relbow: AR.elbow,
+      head, torso: grp,
+    },
+  };
 }
 
 /* Spawn the named principals + ambient residents as walking agents. */
@@ -338,6 +447,19 @@ function spawnPeople(g, id, rnd) {
 World._agentCount = () => agents.length;
 World._agentPositions = () => agents.map((a) => [a.grp.position.x.toFixed(2), a.grp.position.z.toFixed(2), a.state]);
 World._openFirstDialogue = () => { if (agents[0]) openDialogue(agents[0].meta, agents[0]); };
+World._inspect = (i) => { const a = agents[i || 0]; if (!a) return; a.grp.position.set(0, 0, 0);
+  a.state = "frozen"; a.facing = a.grp.rotation.y = Math.PI * 0.82;
+  player.pos.set(0, 1.5, 6.8); yaw = Math.PI; pitch = -0.12; };
+
+World._bbox = (i) => {
+  const a = agents[i || 0]; if (!a) return null;
+  const b = new THREE.Box3().setFromObject(a.grp);
+  const s = new THREE.Vector3(); b.getSize(s);
+  return { min: [b.min.x.toFixed(2), b.min.y.toFixed(2), b.min.z.toFixed(2)],
+           max: [b.max.x.toFixed(2), b.max.y.toFixed(2), b.max.z.toFixed(2)],
+           size: [s.x.toFixed(2), s.y.toFixed(2), s.z.toFixed(2)],
+           children: a.grp.children.length };
+};
 
 function pickWander(rnd) {
   const r = (rnd ? rnd() : Math.random());
@@ -349,6 +471,11 @@ function pickWander(rnd) {
 function updateAgents(dt) {
   const dlgAgent = World._dialog && World._dialog.agent;
   for (const ag of agents) {
+    if (ag.state === "frozen") { // inspector pose: gentle idle only
+      ag.idle = (ag.idle || 0) + dt; const br = Math.sin(ag.idle * 1.6) * 0.04;
+      ag.parts.larmPivot.rotation.x = br; ag.parts.rarmPivot.rotation.x = -br;
+      continue;
+    }
     const gp = ag.grp.position;
     const dxp = player.pos.x - gp.x, dzp = player.pos.z - gp.z;
     const distP = Math.hypot(dxp, dzp);
@@ -377,15 +504,39 @@ function updateAgents(dt) {
     ag.facing += df * Math.min(1, dt * 8);
     ag.grp.rotation.y = ag.facing;
 
-    // limb swing (natural arm-leg counter-swing while walking)
-    const targetAmp = moving ? 0.55 : 0;
+    const P = ag.parts;
+    // gait: hips/shoulders counter-swing; knees & elbows bend on the back-swing
+    const targetAmp = moving ? 0.6 : 0;
     ag.amp += (targetAmp - ag.amp) * Math.min(1, dt * 6);
     ag.phase += dt * ag.speed * 5.5;
     const sw = Math.sin(ag.phase) * ag.amp;
-    ag.parts.llegPivot.rotation.x = sw;
-    ag.parts.rlegPivot.rotation.x = -sw;
-    ag.parts.larmPivot.rotation.x = -sw;
-    ag.parts.rarmPivot.rotation.x = sw;
+    const swc = Math.cos(ag.phase) * ag.amp;
+    P.llegPivot.rotation.x = sw;  P.rlegPivot.rotation.x = -sw;
+    if (P.lknee) P.lknee.rotation.x = Math.max(0, -sw) * 1.1;
+    if (P.rknee) P.rknee.rotation.x = Math.max(0, sw) * 1.1;
+    P.larmPivot.rotation.x = -sw; P.rarmPivot.rotation.x = sw;
+    if (P.lelbow) P.lelbow.rotation.x = Math.max(0, sw) * 0.7 + 0.1;
+    if (P.relbow) P.relbow.rotation.x = Math.max(0, -sw) * 0.7 + 0.1;
+
+    // idle breathing / weight-shift sway, and a vertical bob while walking
+    ag.idle = (ag.idle || Math.random() * 6) + dt;
+    const breathe = Math.sin(ag.idle * 1.6) * 0.02;
+    const bob = moving ? Math.abs(Math.sin(ag.phase)) * 0.04 * ag.amp : 0;
+    ag.grp.position.y = bob;
+    if (!moving) { P.larmPivot.rotation.x = breathe; P.rarmPivot.rotation.x = -breathe; }
+
+    // head turns toward you when you're near (reacting to your approach)
+    if (P.head) {
+      let hy = 0, hx = 0;
+      if (ag.state === "react") {
+        const local = Math.atan2(dxp, dzp) - ag.facing;
+        let n = local; while (n > Math.PI) n -= Math.PI * 2; while (n < -Math.PI) n += Math.PI * 2;
+        hy = Math.max(-0.9, Math.min(0.9, n));
+        hx = Math.max(-0.4, Math.min(0.4, (player.pos.y - 1.86) * -0.3));
+      } else { hy = Math.sin(ag.idle * 0.7) * 0.25; }
+      P.head.rotation.y += (hy - P.head.rotation.y) * Math.min(1, dt * 6);
+      P.head.rotation.x += (hx - P.head.rotation.x) * Math.min(1, dt * 6);
+    }
   }
 }
 

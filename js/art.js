@@ -201,16 +201,54 @@ Art.detail = function (kind, rw, rh) {
   return t;
 };
 
+/* --------------------------------------------------------------------------
+ * NORMAL MAPS — derive surface relief from a height (grayscale) canvas via a
+ * Sobel gradient, so brick mortar, stone grout, and panel seams catch light.
+ * -------------------------------------------------------------------------- */
+Art.normalFromCanvas = function (srcCanvas, strength) {
+  const S = srcCanvas.width;
+  const sdata = srcCanvas.getContext("2d").getImageData(0, 0, S, S).data;
+  const out = document.createElement("canvas"); out.width = out.height = S;
+  const octx = out.getContext("2d"), img = octx.createImageData(S, S);
+  const st = strength || 2.2;
+  const h = (x, y) => sdata[(((y + S) % S) * S + ((x + S) % S)) * 4] / 255;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = (h(x - 1, y) - h(x + 1, y)) * st;
+    const dy = (h(x, y - 1) - h(x, y + 1)) * st;
+    let nx = dx, ny = dy, nz = 1; const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
+    const i = (y * S + x) * 4;
+    img.data[i] = 128 + nx * 127; img.data[i + 1] = 128 + ny * 127; img.data[i + 2] = 128 + nz * 127; img.data[i + 3] = 255;
+  }
+  octx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(out); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
+  return t;
+};
+
+Art._normCache = {};
+Art.detailNormal = function (kind, rw, rh) {
+  const key = `${kind}|${rw}|${rh}`;
+  if (Art._normCache[key]) return Art._normCache[key];
+  if (!Art._normBase) Art._normBase = {};
+  if (!Art._normBase[kind]) Art._normBase[kind] = Art.normalFromCanvas(Art.grayPattern(kind).image, 2.4);
+  const t = Art._normBase[kind].clone(); t.needsUpdate = true;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rw, rh); t.anisotropy = 4;
+  Art._normCache[key] = t;
+  return t;
+};
+
 /* Materials for the 3D world, themed per district. */
 Art.groundMaterial = function (theme) {
+  const rep = theme.groundRepeat || 9;
   const t = Art.pattern(theme.tex, theme.ground, theme.texAccent || theme.wall, theme.seed);
-  t.repeat.set(theme.groundRepeat || 9, theme.groundRepeat || 9);
-  return new THREE.MeshStandardMaterial({ map: t, roughness: 1 });
+  t.repeat.set(rep, rep);
+  const n = Art.normalFromCanvas(t.image, 2.0); n.repeat.set(rep, rep);
+  return new THREE.MeshStandardMaterial({ map: t, normalMap: n, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.95 });
 };
 Art.wallMaterial = function (theme) {
   const t = Art.pattern(theme.wallTex || theme.tex, theme.wall, theme.texAccent || theme.ground, (theme.seed || 1) + 7);
   t.repeat.set(6, 2);
-  return new THREE.MeshStandardMaterial({ map: t, roughness: 1 });
+  const n = Art.normalFromCanvas(t.image, 2.2); n.repeat.set(6, 2);
+  return new THREE.MeshStandardMaterial({ map: t, normalMap: n, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 1 });
 };
 
 /* ==========================================================================
