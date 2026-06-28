@@ -253,6 +253,149 @@ function examine(title, text, kind) {
   };
 }
 
+/* ======================================================================== */
+/* TRAFFIC — motorcycles, cars, hovercars and drones to make the city move.  */
+let vehicles = [];
+
+function wheel(r, mat) {
+  const piv = new THREE.Object3D();
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, r * 0.5, 12), mat);
+  m.rotation.z = Math.PI / 2; piv.add(m);               // axle along X
+  return piv;
+}
+
+function makeVehicle(kind, color, night) {
+  const grp = new THREE.Group();
+  const body = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.6 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.6, metalness: 0.4 });
+  const tyre = new THREE.MeshStandardMaterial({ color: 0x0e0e12, roughness: 0.9 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.1, metalness: 0.8, emissive: 0x112233, emissiveIntensity: 0.3 });
+  const head = new THREE.MeshStandardMaterial({ color: 0xfff0c0, emissive: 0xfff0c0, emissiveIntensity: night ? 1.6 : 0.4 });
+  const tail = new THREE.MeshStandardMaterial({ color: 0xff3030, emissive: 0xff2020, emissiveIntensity: night ? 1.4 : 0.5 });
+  const mk = (w, h, d, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); grp.add(m); return m; };
+  const wheels = [];
+
+  if (kind === "moto") {
+    mk(0.34, 0.26, 1.3, body, 0, 0.55, 0);            // frame
+    mk(0.3, 0.22, 0.4, dark, 0, 0.72, -0.15);          // tank/seat
+    mk(0.18, 0.4, 0.18, dark, 0, 0.8, 0.55);           // forks/handlebars
+    const rider = new THREE.Group(); rider.position.set(0, 0.85, 0.05);
+    const rb = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x222028, roughness: 0.7 })); rb.position.y = 0.25; rb.rotation.x = 0.35; rider.add(rb);
+    const rh = new THREE.Mesh(GEO.sphere, new THREE.MeshStandardMaterial({ color: 0x1a1a22, roughness: 0.5 })); rh.scale.setScalar(0.12); rh.position.set(0, 0.55, -0.05); rider.add(rh);
+    grp.add(rider);
+    const wf = wheel(0.3, tyre); wf.position.set(0, 0.3, 0.62); grp.add(wf); wheels.push(wf);
+    const wr = wheel(0.32, tyre); wr.position.set(0, 0.3, -0.6); grp.add(wr); wheels.push(wr);
+    mk(0.14, 0.14, 0.06, head, 0, 0.7, 0.78);          // headlight
+    mk(0.1, 0.08, 0.05, tail, 0, 0.62, -0.78);
+  } else if (kind === "hover") {
+    mk(1.1, 0.34, 2.6, body, 0, 0.7, 0);
+    mk(0.9, 0.3, 1.3, glass, 0, 0.98, -0.05);
+    mk(1.0, 0.08, 2.4, new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.4 }), 0, 0.5, 0); // glow underside
+    mk(0.5, 0.1, 0.1, head, 0, 0.7, 1.32);
+    mk(0.5, 0.1, 0.1, tail, 0, 0.7, -1.32);
+  } else { // car
+    mk(1.5, 0.5, 3.2, body, 0, 0.55, 0);
+    mk(1.4, 0.45, 1.7, glass, 0, 0.95, -0.1);
+    mk(1.52, 0.18, 0.9, body, 0, 0.5, 1.1);
+    const wp = [[0.72, 1.05], [-0.72, 1.05], [0.72, -1.05], [-0.72, -1.05]];
+    for (const [wx, wz] of wp) { const w = wheel(0.34, tyre); w.position.set(wx, 0.32, wz); grp.add(w); wheels.push(w); }
+    mk(0.28, 0.16, 0.06, head, 0.45, 0.5, 1.62); mk(0.28, 0.16, 0.06, head, -0.45, 0.5, 1.62);
+    mk(0.24, 0.14, 0.06, tail, 0.5, 0.55, -1.62); mk(0.24, 0.14, 0.06, tail, -0.5, 0.55, -1.62);
+  }
+  return { grp, wheels };
+}
+
+function spawnTraffic(id, night) {
+  vehicles = [];
+  // per-district traffic profile (sacred/oldest places stay quiet)
+  const profile = {
+    hanging_market: { n: 6, kinds: ["moto", "moto", "car"], drones: 2 },
+    ironwall:       { n: 5, kinds: ["moto", "car"], drones: 1 },
+    broken_crown:   { n: 6, kinds: ["moto", "moto", "moto", "car"], drones: 2 },
+    neon_labyrinth: { n: 9, kinds: ["moto", "hover", "hover", "car"], drones: 6 },
+    spire:          { n: 6, kinds: ["hover", "hover", "car"], drones: 5 },
+    ziggurat_crown: { n: 2, kinds: ["moto"], drones: 1 },
+    god_quarter:    { n: 0, kinds: [], drones: 0 },
+    sub_strata:     { n: 0, kinds: [], drones: 0 },
+  }[id] || { n: 3, kinds: ["moto", "car"], drones: 1 };
+
+  const motoCols = [0x8a2a2a, 0x2a4a8a, 0x2a8a5a, 0xc8a030, 0x222228, 0x8a3a6a];
+  for (let i = 0; i < profile.n; i++) {
+    const kind = profile.kinds[i % profile.kinds.length];
+    const v = makeVehicle(kind, motoCols[(Math.random() * motoCols.length) | 0], night);
+    const lane = i % 3;                                   // three concentric ring lanes
+    const rx = BOUND - 2.5 - lane * 2.6, rz = BOUND - 2.5 - lane * 2.6;
+    const dir = lane === 1 ? -1 : 1;                       // middle lane runs opposite
+    const hoverY = kind === "hover" ? 1.2 + Math.random() * 2.5 : 0;
+    scene.add(v.grp);
+    vehicles.push({ grp: v.grp, wheels: v.wheels, kind, rx, rz, dir,
+      angle: Math.random() * Math.PI * 2, speed: kind === "hover" ? 7 + Math.random() * 4 : 5 + Math.random() * 4, y: hoverY });
+  }
+  // drifting drones above the rooftops
+  for (let i = 0; i < profile.drones; i++) {
+    const c = id === "spire" ? 0x88c0ff : 0x38d0c8;
+    const d = new THREE.Group();
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.5), new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.5, metalness: 0.6 })); d.add(b);
+    const l = new THREE.Mesh(GEO.sphere, new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 1.6 })); l.scale.setScalar(0.08); l.position.y = -0.12; d.add(l);
+    scene.add(d);
+    vehicles.push({ grp: d, drone: true, rx: 10 + Math.random() * 14, rz: 10 + Math.random() * 14,
+      dir: Math.random() > 0.5 ? 1 : -1, angle: Math.random() * 6.28, speed: 3 + Math.random() * 3, y: 9 + Math.random() * 8 });
+  }
+}
+
+function updateVehicles(dt) {
+  for (const v of vehicles) {
+    v.angle += v.dir * v.speed * dt / Math.max(8, (v.rx + v.rz) / 2);
+    const x = Math.cos(v.angle) * v.rx, z = Math.sin(v.angle) * v.rz;
+    v.grp.position.set(x, v.y, z);
+    const dx = -Math.sin(v.angle) * v.rx * v.dir, dz = Math.cos(v.angle) * v.rz * v.dir;
+    v.grp.rotation.y = Math.atan2(dx, dz);
+    if (v.drone) { v.grp.position.y = v.y + Math.sin(v.angle * 3) * 0.4; v.grp.rotation.z = 0; continue; }
+    v.grp.rotation.z = -v.dir * 0.06;                      // bank into the turn
+    if (v.wheels) for (const w of v.wheels) w.rotation.x += v.speed * dt * 3;
+  }
+}
+
+/* A high-rise in one of several silhouettes, so skylines aren't all boxes. */
+function cityTower(rnd, x, z, w, h, color, opts) {
+  opts = opts || {};
+  const win = (mw, mh, mx, my, mz, seed) => {
+    const t = Art && Art.windowTex(opts.winColor || 0xbfe2ff, opts.night, seed | 0);
+    const m = box(mw, mh, mw, color, mx, my, mz, { rough: opts.rough != null ? opts.rough : 0.45, metal: opts.metal != null ? opts.metal : 0.45, emissiveMap: t, emissive: 0xffffff, ei: opts.night ? 0.85 : 0.26 });
+    if (t) m.material.emissiveMap.repeat.set(Math.max(1, Math.round(mw / 3)), Math.max(2, Math.round(mh / 5)));
+    return m;
+  };
+  const sil = opts.silhouette || ["box", "box", "setback", "setback", "taper", "cylinder", "L", "antenna"][(rnd() * 8) | 0];
+  if (sil === "setback") {
+    let cw = w, cy = 0; const tiers = 2 + ((rnd() * 2) | 0);
+    for (let t = 0; t < tiers; t++) { const th = h / tiers; win(cw, th, x, cy + th / 2, z, x * 13 + z * 7 + t); cy += th; cw *= 0.72; }
+  } else if (sil === "taper") {
+    const g = new THREE.CylinderGeometry(w * 0.32, w * 0.6, h, 4);
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.5 }));
+    m.rotation.y = Math.PI / 4; m.position.set(x, h / 2, z); m.castShadow = true; m.receiveShadow = true; scene.add(m);
+  } else if (sil === "cylinder") {
+    const t = Art && Art.windowTex(opts.winColor || 0xbfe2ff, opts.night, (x | 0) + 9);
+    const g = new THREE.CylinderGeometry(w * 0.5, w * 0.56, h, 16);
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.5, emissiveMap: t, emissive: t ? 0xffffff : 0x000000, emissiveIntensity: opts.night ? 0.8 : 0.24 }));
+    if (t) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, Math.max(2, Math.round(h / 5))); }
+    m.position.set(x, h / 2, z); m.castShadow = true; m.receiveShadow = true; scene.add(m);
+  } else if (sil === "L") {
+    win(w, h, x, h / 2, z - w * 0.22, x + z); box(w * 0.55, h * 0.8, w, color, x - w * 0.22, h * 0.4, z, { rough: 0.45, metal: 0.45, emissiveMap: Art && Art.windowTex(opts.winColor || 0xbfe2ff, opts.night, x - z), emissive: 0xffffff, ei: opts.night ? 0.85 : 0.26 });
+  } else if (sil === "antenna") {
+    win(w, h, x, h / 2, z, x + z * 3);
+    box(0.12, h * 0.45, 0.12, 0x2a2a30, x, h + h * 0.22, z, { tex: null, metal: 0.6 });
+    box(0.18, 0.18, 0.18, 0xff4040, x, h + h * 0.45, z, { emissive: 0xff3030, ei: 1.4, tex: null });
+  } else {
+    win(w, h, x, h / 2, z, x * 5 + z);
+  }
+  if (opts.neon) { const c = opts.stripColor || 0x38d0c8; box(0.26, h * 0.85, 0.26, c, x + w / 2 + 0.05, h / 2, z, { emissive: c, ei: 1.5, tex: null }); }
+  // rooftop clutter
+  if (rnd() > 0.55 && sil !== "taper" && sil !== "cylinder") {
+    if (rnd() > 0.5) { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.8, 10), new THREE.MeshStandardMaterial({ color: 0x3a3630, roughness: 0.85 })); t.position.set(x + (rnd() - 0.5) * w * 0.4, h + 0.4, z + (rnd() - 0.5) * w * 0.4); t.castShadow = true; scene.add(t); }
+    else box(0.6, 0.5, 0.6, 0x2a2a30, x + (rnd() - 0.5) * w * 0.3, h + 0.25, z, { tex: "panel", metal: 0.4 });
+  }
+}
+
 /* Gradient sky dome, a sun or moon disc, and stars at night. */
 function buildSky(theme, g) {
   if (theme.tex === "fungal") return; // the Sub-Strata is underground; no sky
@@ -395,8 +538,9 @@ World.buildDistrict = function (id, spawnCenter) {
   });
   currentBuildKind = null;
 
-  // populate the district with people who live in it
+  // populate the district with people who live in it, and put the streets in motion
   spawnPeople(g, id, rnd);
+  spawnTraffic(id, Engine.isNight(g));
 
   // spawn
   if (spawnCenter) { player.pos.set(0, 1.7, 16); yaw = Math.PI; pitch = 0; }
@@ -734,7 +878,7 @@ World.enterBuilding = function (spec) {
   inInterior = true; interiorSpec = spec; returnDistrict = State.data.here;
   currentFloor = 0; currentFloorY = 0;
   while (scene.children.length) scene.remove(scene.children[0]);
-  interactables = []; agents = []; labelSprites = []; floorLabels = []; focus = null;
+  interactables = []; agents = []; vehicles = []; labelSprites = []; floorLabels = []; focus = null;
 
   const sky = spec.sky != null ? spec.sky : 0x14110d;
   scene.background = new THREE.Color(sky);
@@ -837,6 +981,7 @@ World._gotoLandmark = (n) => {
   return focus ? focus.label : null;
 };
 World._focusLabel = () => focus ? focus.label : null;
+World._vehicles = () => vehicles.map((v) => [v.grp.position.x.toFixed(1), v.grp.position.z.toFixed(1), v.kind || (v.drone ? "drone" : "?")]);
 World._goto = (type, n) => {
   const list = interactables.filter((i) => i.type === type && (i.floor === undefined || i.floor === currentFloor));
   const it = list[n || 0]; if (!it) return null;
@@ -1156,19 +1301,15 @@ const THEMES = {
     build(rnd, night) {
       const neon = [0x38d0c8, 0xff5c7a, 0xc850ff, 0x50ff9a, 0xffd23a, 0x40a0ff];
       const tops = [];
-      for (let i = 0; i < 22; i++) {
+      for (let i = 0; i < 24; i++) {
         const x = (rnd() - 0.5) * 48, z = (rnd() - 0.5) * 48;
         if (Math.hypot(x, z) < 9) continue;
-        const w = 3.4 + rnd() * 2.2, h = 9 + rnd() * 20;
+        const w = 3.4 + rnd() * 2.4, h = 9 + rnd() * 21;
         const c = neon[(rnd() * neon.length) | 0];
-        const win = Art && Art.windowTex(c, true, i * 7 + 1);                     // baked lit windows
-        const tower = box(w, h, w, 0x16161f, x, h / 2, z, { rough: 0.5, metal: 0.35, emissiveMap: win, emissive: 0xffffff, ei: 0.9 });
-        if (win) { tower.material.emissiveMap.repeat.set(Math.max(1, Math.round(w / 3)), Math.max(1, Math.round(h / 5))); }
-        box(0.28, h * 0.85, 0.28, c, x + w / 2 + 0.05, h / 2, z, { emissive: c, ei: 1.5, tex: null }); // edge strip
-        box(0.28, h * 0.85, 0.28, c, x - w / 2 - 0.05, h / 2, z, { emissive: c, ei: 1.5, tex: null });
+        cityTower(rnd, x, z, w, h, 0x16161f, { neon: true, night: true, winColor: c, stripColor: c, metal: 0.35, rough: 0.5 });
         const sc = neon[(rnd() * neon.length) | 0];
         box(0.1, 1.6, 1.4, sc, x + w / 2 + 0.2, h * (0.4 + rnd() * 0.4), z, { emissive: sc, ei: 1.4, tex: null }); // holo sign
-        if (rnd() > 0.5) light(c, 5, x, h * 0.5, z, 16);
+        if (rnd() > 0.6) light(c, 5, x, h * 0.5, z, 16);
         tops.push([x, h, z, c]);
       }
       // sagging power/data cables between towers
@@ -1191,13 +1332,11 @@ const THEMES = {
     fogNear: 30, fogFar: 140, hemiSky: 0xffffff, hemiGround: 0x90a0b0, hemiInt: 0.9,
     sun: 0xffffff, sunInt: 1.4,
     build(rnd, night) {
-      // clean tall glass towers with baked, lit window grids
-      for (let i = 0; i < 11; i++) {
-        const a = (i / 11) * Math.PI * 2, r = 15 + rnd() * 7;
-        const x = Math.cos(a) * r, z = Math.sin(a) * r, w = 4.5 + rnd() * 2, h = 24 + rnd() * 24;
-        const win = Art && Art.windowTex(0xbfe2ff, night, i * 9 + 3);
-        const tower = box(w, h, w, 0xeaf0f6, x, h / 2, z, { rough: 0.12, metal: 0.65, emissiveMap: win, emissive: 0xffffff, ei: night ? 0.85 : 0.3 });
-        if (win) tower.material.emissiveMap.repeat.set(Math.max(1, Math.round(w / 3)), Math.max(2, Math.round(h / 5)));
+      // clean tall glass towers in varied silhouettes, with baked lit windows
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2, r = 15 + rnd() * 7;
+        const x = Math.cos(a) * r, z = Math.sin(a) * r, w = 4.5 + rnd() * 2.2, h = 24 + rnd() * 26;
+        cityTower(rnd, x, z, w, h, 0xeaf0f6, { night, winColor: 0xbfe2ff, metal: 0.65, rough: 0.12 });
         box(0.3, 2, 0.3, 0xcfe0ee, x, h + 1, z, { emissive: 0x88c0ff, ei: night ? 1.2 : 0.4, tex: null }); // beacon
       }
       // central monument + reflecting plaza + planters
@@ -1265,6 +1404,7 @@ function loop() {
   const dt = Math.min(clock.getDelta(), 0.05);
   if (started && !panelsOpen() && !dialogOpen()) updateMovement(dt);
   if (started) updateAgents(dt);
+  if (started && !inInterior) updateVehicles(dt);
 
   // camera orientation
   camera.position.copy(player.pos);
