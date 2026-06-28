@@ -35,6 +35,11 @@ const BOUND = 27;         // half-size of a district plot
 let inInterior = false;
 let interiorSpec = null;
 let returnDistrict = null;
+
+/* world-region travel state */
+let inRegion = false;
+let currentRegion = null;
+let returnFromRegion = null;
 let currentFloor = 0;
 let currentFloorY = 0;
 const INNER = 13;         // half-size of an interior floor
@@ -77,10 +82,11 @@ World.init = function () {
     if (e.code === "KeyE") { if (dialogOpen()) closeDialog(); else World.interact(); }
     if (e.code === "Tab") { e.preventDefault(); if (!dialogOpen()) World.togglePanels(); }
     if (e.code === "KeyP") { ppOn = !ppOn; toast(`Cinematic rendering ${ppOn ? "on" : "off"}.`, ""); }
+    if (e.code === "KeyM" && window.GameAudio) toast(`Sound ${GameAudio.toggle() ? "on" : "off"}.`, "");
   });
   addEventListener("keyup", (e) => { keys[e.code] = false; });
 
-  canvas.addEventListener("click", () => { if (!panelsOpen() && !dialogOpen()) canvas.requestPointerLock(); });
+  canvas.addEventListener("click", () => { if (window.GameAudio) GameAudio.ensure(); if (!panelsOpen() && !dialogOpen()) canvas.requestPointerLock(); });
 
   // dialogue buttons
   document.getElementById("dlg-friendly").onclick = () => chooseDialog("Friendly");
@@ -552,6 +558,7 @@ World.buildDistrict = function (id, spawnCenter) {
   const rnd = mulberry32(hash(id));
   const theme = THEMES[id] || THEMES._default;
   currentDistrictId = id;
+  inRegion = false; inInterior = false;
 
   scene.background = new THREE.Color(theme.sky);
   scene.fog = new THREE.Fog(theme.sky, theme.fogNear, theme.fogFar);
@@ -651,6 +658,7 @@ World.buildDistrict = function (id, spawnCenter) {
   if (spawnCenter) { player.pos.set(0, 1.7, 16); yaw = Math.PI; pitch = 0; }
   player.vel.set(0, 0, 0);
 
+  if (window.GameAudio) GameAudio.setDistrict(id, Engine.isNight(g));
   World.updateHUD();
 };
 
@@ -925,6 +933,157 @@ function changeFloor(target) {
   setInteriorFloorVis();
   updateFocus();
 }
+
+/* ======================================================================== */
+/* WORLD REGIONS — travel beyond Ur-Axiom to the territories of the world.    */
+function addWanderer(meta, x, z) {
+  const built = makeHuman(meta.appear || People.appearance(mulberry32(hash(meta.id))(), meta.faction, meta.kind));
+  built.grp.position.set(x, 0, z); built.grp.rotation.y = Math.random() * 6.28; scene.add(built.grp);
+  const tag = makeLabel(meta.name, "#cdbf9a"); tag.position.set(0, 2.05 / built.grp.scale.x, 0); tag.scale.set(3.4, 0.85, 1); built.grp.add(tag);
+  const agent = { meta, grp: built.grp, parts: built.parts, facing: built.grp.rotation.y,
+    target: pickWander(), speed: 1.0 + Math.random() * 0.8, phase: Math.random() * 6.28, amp: 0, state: "wander", greeted: false };
+  agents.push(agent);
+  interactables.push({ type: "npc", label: `Speak with ${meta.name}`, pos: built.grp.position, radius: 3.3, mesh: null, meta, agent, run: () => { openDialogue(meta, agent); return {}; } });
+}
+
+const REGION_ORDER = ["ur_basin", "haze_coast", "obsidian", "delta", "steppe", "fracture", "holds", "deep_south"];
+const REGION_INFO = {
+  ur_basin: { name: "The Ur Basin", days: 1, tag: "ancient heartland", kind: "laborer", goods: ["grain", "fish", "water"],
+    lore: "The alluvial flatland around the City, irrigated by canals maintained for four millennia because no government survives letting them fail. Geography is fate here; families have worked these plots beyond counting.",
+    theme: { sky: 0x3a2c1c, ground: 0xb59668, tex: "sand", rep: 14, hemiSky: 0xffe0b0, hemiGround: 0x5a4530, hemiInt: 0.7, sun: 0xffd9a0, sunInt: 1.1, fogNear: 22, fogFar: 130 },
+    build(rnd) {
+      for (let i = 0; i < 16; i++) { const x = (rnd() - 0.5) * 72, z = (rnd() - 0.5) * 72; if (Math.hypot(x, z) < 8) continue; const h = 3 + rnd() * 5; box(3, h, 3, rnd() > 0.5 ? 0x9a7a52 : 0x8a6e4a, x, h / 2, z, { tex: "brick" }); }
+      for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(90, 3), new THREE.MeshStandardMaterial({ color: 0x3a5a6a, roughness: 0.2, metalness: 0.3 })); m.rotation.x = -Math.PI / 2; m.position.set(0, 0.03, -24 + i * 22); m.receiveShadow = true; scene.add(m); }
+    } },
+  haze_coast: { name: "The Haze Coast", days: 3, tag: "cyberpunk industry", kind: "augmented", goods: ["parts", "stim", "augkit"],
+    lore: "A two-hundred-kilometre industrial megaplex where most of the world's goods are made and most of its makers live in conditions the corporations call 'dynamic'. The sea is the colour of lead; the resistance here is organised and very hard to kill.",
+    theme: { sky: 0x4a4a46, ground: 0x3a3a38, tex: "concrete", rep: 12, hemiSky: 0x9a9a96, hemiGround: 0x222020, hemiInt: 0.5, sun: 0xb0b0a8, sunInt: 0.5, fogNear: 14, fogFar: 90 },
+    build(rnd) {
+      for (let i = 0; i < 10; i++) { const x = (rnd() - 0.5) * 72, z = (rnd() - 0.5) * 72; if (Math.hypot(x, z) < 8) continue; const h = 8 + rnd() * 14; cyl(1.2, 1.7, h, new THREE.MeshStandardMaterial({ color: 0x44464a, roughness: 0.8, metalness: 0.3 }), x, h / 2, z); const sm = ball(new THREE.MeshStandardMaterial({ color: 0x6a6a6a, transparent: true, opacity: 0.5, roughness: 1 }), 1.6); sm.position.set(x, h + 1.6, z); scene.add(sm); }
+      const cc = [0x8a3a3a, 0x3a6a8a, 0x6a8a3a, 0x8a7a3a];
+      for (let i = 0; i < 22; i++) box(2.4, 2, 5, cc[(rnd() * cc.length) | 0], (rnd() - 0.5) * 72, 1, (rnd() - 0.5) * 72, { tex: "panel", metal: 0.3 });
+    } },
+  obsidian: { name: "The Obsidian Highlands", days: 4, tag: "cold highland", kind: "soldier", goods: ["relic", "parts"],
+    lore: "Mountainous, cold, and culturally sealed — named for the volcanic glass quarried here for ten thousand years. The highland clans have refused political submission for the whole recorded history of the City's expansion, at enormous cost, because they understand what follows submission.",
+    theme: { sky: 0x2a2e3a, ground: 0x2a2a30, tex: "stone", rep: 10, hemiSky: 0x9aa6c0, hemiGround: 0x202028, hemiInt: 0.5, sun: 0xc0d0e0, sunInt: 0.7, fogNear: 12, fogFar: 80 },
+    build(rnd) {
+      for (let i = 0; i < 18; i++) { const x = (rnd() - 0.5) * 74, z = (rnd() - 0.5) * 74; if (Math.hypot(x, z) < 6) continue; const h = 4 + rnd() * 11; const m = new THREE.Mesh(new THREE.ConeGeometry(2 + rnd() * 2, h, 5), new THREE.MeshStandardMaterial({ color: rnd() > 0.7 ? 0x14141a : 0x2a2a32, roughness: 0.7, metalness: 0.25 })); m.position.set(x, h / 2, z); m.castShadow = true; m.receiveShadow = true; scene.add(m); }
+    } },
+  delta: { name: "The Delta Provinces", days: 3, tag: "water city-states", kind: "merchant", goods: ["fish", "water", "cloth"],
+    lore: "A patchwork of semi-autonomous city-states at the mouth of the great river, connected by water and a dizzying variety of governments. Those that took corporate technology early are productive and dependent; those that refused kept their independence and pay for it.",
+    theme: { sky: 0x3a4a4a, ground: 0x223230, tex: "stone", rep: 10, hemiSky: 0xa0c0c0, hemiGround: 0x1a2826, hemiInt: 0.6, sun: 0xd0e0e0, sunInt: 0.8, fogNear: 16, fogFar: 100 },
+    build(rnd) {
+      const w = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), new THREE.MeshStandardMaterial({ color: 0x2a4a4a, roughness: 0.18, metalness: 0.45 })); w.rotation.x = -Math.PI / 2; w.position.y = 0.08; scene.add(w);
+      for (let i = 0; i < 14; i++) { const x = (rnd() - 0.5) * 64, z = (rnd() - 0.5) * 64; if (Math.hypot(x, z) < 6) continue; for (const [dx, dz] of [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]]) box(0.16, 1.8, 0.16, 0x4a3a28, x + dx, 0.9, z + dz, { tex: null }); box(2.2, 1.3, 2.2, 0x6a5236, x, 2.1, z, { tex: "plank" }); box(2.6, 0.2, 2.6, 0x3a3630, x, 2.85, z, { tex: "panel", metal: 0.3 }); }
+    } },
+  steppe: { name: "The Eastern Steppe", days: 5, tag: "nomad grassland", kind: "nomad", goods: ["grain", "cloth"],
+    lore: "The largest landmass in the world and the least governed — grassland crossed by nomadic confederations whose seasonal routes are the real political map. They do not value money; they value horses, intelligence, and demonstrated personal capability.",
+    theme: { sky: 0x6a7a8a, ground: 0x6a7a4a, tex: "sand", rep: 16, hemiSky: 0xcfe0f0, hemiGround: 0x4a5a30, hemiInt: 0.8, sun: 0xfff4d8, sunInt: 1.2, fogNear: 30, fogFar: 150 },
+    build(rnd) {
+      for (let i = 0; i < 16; i++) { const x = (rnd() - 0.5) * 78, z = (rnd() - 0.5) * 78; if (Math.hypot(x, z) < 6) continue; const d = ball(new THREE.MeshStandardMaterial({ color: 0xcdbf9a, roughness: 0.9 }), 1.7); d.scale.set(1, 0.7, 1); d.position.set(x, 1.05, z); d.castShadow = true; scene.add(d); box(0.4, 0.6, 0.4, 0x6a5236, x, 0.3, z + 1.6, { tex: null }); }
+      for (let i = 0; i < 6; i++) { const x = (rnd() - 0.5) * 70, z = (rnd() - 0.5) * 70; box(0.5, 0.6, 1.4, 0x5a4030, x, 1.0, z, { tex: null }); box(0.4, 0.7, 0.3, 0x5a4030, x, 1.3, z + 0.8, { tex: null }); for (const lz of [-0.5, 0.5]) { box(0.14, 0.7, 0.14, 0x3a2a1a, x - 0.18, 0.35, z + lz, { tex: null }); box(0.14, 0.7, 0.14, 0x3a2a1a, x + 0.18, 0.35, z + lz, { tex: null }); } }
+    } },
+  fracture: { name: "The Fracture Zone", days: 4, tag: "ruined cyber-infra", kind: "vagrant", goods: ["parts", "contraband", "stim"],
+    lore: "What rapid corporate development looks like after the development stops and the consequences arrive. Infrastructure built for thirty years, now in its fiftieth with no maintenance and no responsible owner. The most creative place in the world — because broken systems make people who can rebuild them.",
+    theme: { sky: 0x3a3440, ground: 0x3a3a3a, tex: "concrete", rep: 12, hemiSky: 0x8a86a0, hemiGround: 0x1a1820, hemiInt: 0.45, sun: 0x9a8aff, sunInt: 0.5, fogNear: 12, fogFar: 78 },
+    build(rnd) {
+      for (let i = 0; i < 8; i++) { const x = (rnd() - 0.5) * 70, z = (rnd() - 0.5) * 70; box(6, 0.8, 16, 0x44423e, x, 6, z, { tex: "concrete" }); box(1, 6, 1, 0x3a3834, x - 2, 3, z - 6, { tex: "concrete" }); box(1, 6, 1, 0x3a3834, x + 2, 3, z + 6, { tex: "concrete" }); if (rnd() > 0.5) box(0.2, 1.4, 1.2, 0x38d0c8, x + 3, 7, z, { emissive: 0x38d0c8, ei: 1.2, tex: null }); }
+      const fl = new THREE.Mesh(new THREE.PlaneGeometry(180, 180), new THREE.MeshStandardMaterial({ color: 0x1a2426, roughness: 0.3, metalness: 0.4 })); fl.rotation.x = -Math.PI / 2; fl.position.y = 0.06; scene.add(fl);
+    } },
+  holds: { name: "The Northern Holds", days: 5, tag: "feudal forest", kind: "soldier", goods: ["cloth", "relic"],
+    lore: "Dense temperate forest broken by stone keeps and river-valley trade routes. The noble families resist modernisation not from ignorance but from a sophisticated understanding that the corporations' kind of modernisation means subordination. Their castles can still withstand a siege — a non-incidental fact.",
+    theme: { sky: 0x3a4a3a, ground: 0x2a3a22, tex: "stone", rep: 12, hemiSky: 0xaacaa0, hemiGround: 0x1a2616, hemiInt: 0.6, sun: 0xd8e0c0, sunInt: 0.8, fogNear: 14, fogFar: 88 },
+    build(rnd) {
+      for (let i = 0; i < 26; i++) { const x = (rnd() - 0.5) * 80, z = (rnd() - 0.5) * 80; if (Math.hypot(x, z) < 5) continue; cyl(0.3, 0.45, 3, new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 }), x, 1.5, z); const c = ball(new THREE.MeshStandardMaterial({ color: rnd() > 0.5 ? 0x2a5a2a : 0x366a30, roughness: 0.9 }), 2.2); c.scale.set(1, 1.3, 1); c.position.set(x, 4.6, z); c.castShadow = true; scene.add(c); }
+      box(9, 13, 9, 0x55524c, 18, 6.5, -12, { tex: "concrete" }); for (let m = 0; m < 4; m++) box(2, 1, 2, 0x46443e, 18 - 3 + (m % 2) * 6, 13.5, -12 - 3 + ((m / 2) | 0) * 6, { tex: "concrete" });
+    } },
+  deep_south: { name: "The Deep South Kingdoms", days: 6, tag: "golden empires", kind: "merchant", goods: ["relic", "cloth", "grain"],
+    lore: "Among the wealthiest and most politically sophisticated states in the world — and the most systematically underestimated, a misunderstanding they have spent centuries learning to leverage. Their merchant networks, the Dyula, reach every corner of the map; the corporations who think they manage the relationship have misidentified who manages whom.",
+    theme: { sky: 0x5a3a1a, ground: 0x8a6a42, tex: "brick", rep: 13, hemiSky: 0xffd8a0, hemiGround: 0x4a3018, hemiInt: 0.75, sun: 0xffdc90, sunInt: 1.1, fogNear: 20, fogFar: 120 },
+    build(rnd) {
+      box(34, 5, 3, 0x6a5236, 0, 2.5, -24, { tex: "brick" }); box(3, 5, 34, 0x6a5236, -24, 2.5, 0, { tex: "brick" });
+      for (let i = 0; i < 12; i++) { const x = (rnd() - 0.5) * 60, z = (rnd() - 0.5) * 60; if (Math.hypot(x, z) < 8) continue; const h = 4 + rnd() * 7; box(4, h, 4, 0x7a6042, x, h / 2, z, { tex: "brick" }); box(0.7, 0.7, 0.7, 0xc8a030, x, h + 0.35, z, { emissive: 0x6a5010, ei: 0.5, tex: null }); }
+    } },
+};
+
+World.buildRegion = function (id) {
+  inRegion = true; currentRegion = id;
+  const info = REGION_INFO[id]; const g = State.data;
+  while (scene.children.length) scene.remove(scene.children[0]);
+  interactables = []; agents = []; vehicles = []; cityTraffic = null; cityTrafficData = []; labelSprites = []; floorLabels = []; focus = null;
+
+  const th = info.theme;
+  const themeLike = { sky: th.sky, ground: th.ground, wall: th.ground, tex: th.tex, groundRepeat: th.rep, seed: hash(id), texAccent: th.sun, skyTop: shadeHex(th.sky, 0.6) };
+  scene.background = new THREE.Color(th.sky);
+  scene.fog = new THREE.Fog(th.sky, th.fogNear, th.fogFar);
+  scene.environment = (window.Assets && Assets.env) ? Assets.env : (Art ? Art.envMap(th.sky, th.ground) : null);
+  scene.add(new THREE.HemisphereLight(th.hemiSky, th.hemiGround, th.hemiInt));
+  const sun = new THREE.DirectionalLight(th.sun, th.sunInt);
+  sun.position.set(28, 46, 18); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 160; sun.shadow.camera.left = -90; sun.shadow.camera.right = 90; sun.shadow.camera.top = 90; sun.shadow.camera.bottom = -90; sun.shadow.bias = -0.0006; scene.add(sun);
+  buildSky(themeLike, g);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), Art ? Art.groundMaterial(themeLike) : new THREE.MeshStandardMaterial({ color: th.ground }));
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+
+  const rnd = mulberry32(hash("region:" + id));
+  info.build(rnd);
+
+  // region residents
+  const fac = info.kind === "nomad" ? "steppe" : "none";
+  for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + rnd(); const r = 8 + rnd() * 10; addWanderer(People.onePerson("reg:" + id + ":" + i, info.kind, fac, "ur_basin"), Math.cos(a) * r, Math.sin(a) * r); }
+
+  // landmark + stations
+  const sx = 0, sz = -10;
+  box(2, 2.4, 2, th.sun, sx, 1.2, sz, { emissive: th.sun, ei: 0.4, tex: null }); light(th.sun, 5, sx, 2.5, sz, 18);
+  interactables.push({ type: "landmark", label: `Examine ${info.name}`, pos: new THREE.Vector3(sx, 1, sz), radius: 4, mesh: null, run: examine(info.name, info.lore, "world") });
+  const ST = (label, color, x, z, run) => interactables.push({ type: "station", label, color, pos: new THREE.Vector3(x, 1, z), radius: ACTIVATE, mesh: box(1.1, 1.2, 1.1, color, x, 0.6, z, { emissive: color, ei: 0.3, tex: null }), run });
+  ST("Scout the region", 0x5a7a5a, -8, 4, (g) => Actions.scout(g, info.name, info.goods));
+  ST("Make camp & rest", 0x6b5030, 8, 4, (g) => Actions.sleep(g));
+  ST("Train navigation", 0x4a6a8a, -8, -4, () => ({ panel: "skills" }));
+  // return gate
+  const gx = 0, gz = BOUND - 3;
+  box(0.8, 5, 0.8, th.ground, gx - 2, 2.5, gz, { rough: 1 }); box(0.8, 5, 0.8, th.ground, gx + 2, 2.5, gz, { rough: 1 }); box(5.2, 0.8, 1, 0x3a6a7a, gx, 5.2, gz, { emissive: 0x3a6a7a, ei: 0.5, tex: null });
+  const lbl = makeLabel("→ Return to Ur-Axiom", "#9ad"); lbl.position.set(gx, 6.4, gz); lbl.scale.set(6, 1.4, 1); scene.add(lbl); labelSprites.push(lbl);
+  interactables.push({ type: "return", label: "Return to Ur-Axiom", pos: new THREE.Vector3(gx, 1, gz - 1.5), radius: ACTIVATE + 1, mesh: null, run: () => { World.returnRegion(); return {}; } });
+
+  player.pos.set(0, 1.7, 16); yaw = Math.PI; pitch = 0; player.vel.set(0, 0, 0);
+  if (window.GameAudio) GameAudio.setDistrict("region", Engine.isNight(g));
+  World.updateHUD();
+};
+
+World.openRegions = function () {
+  if (document.pointerLockElement) document.exitPointerLock();
+  let html = `<h2>The Caravanserai</h2><p class="muted small">Beyond Ur-Axiom lie the territories of the world. Travel is real — measured in days, paid in food and risk. Eat and rest before you set out.</p>`;
+  for (const id of REGION_ORDER) { const r = REGION_INFO[id]; html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)"><span><b style="color:var(--sand)">${r.name}</b> <span class="muted small">· ${r.days} days · ${r.tag}</span></span><button class="primary" onclick="window.World3D.travelToRegion('${id}')">Travel</button></div>`; }
+  UI.modal(html);
+};
+
+World.travelToRegion = function (id) {
+  UI.closeModal();
+  const g = State.data, info = REGION_INFO[id]; if (!info || g.over) return;
+  if (!inRegion) returnFromRegion = g.here;
+  Engine.advance(g, info.days * 9);
+  g.fatigue = Engine.clamp(g.fatigue + info.days * 5, 0, 120);
+  Engine.push(g, `You set out for ${info.name} — ${info.days} day${info.days > 1 ? "s" : ""} on the road. The City falls away behind you.`, "travel");
+  if (Math.random() < 0.25) {
+    if (Math.random() < 0.5) { Engine.injure(g, "road exhaustion", 1); }
+    else { const loss = Math.min(g.money, 8 + Engine.rand(24)); g.money -= loss; Engine.push(g, `Bandits on the road relieve you of ${loss} shekels.`, "warn"); }
+  }
+  if (g.over) { UI.gameOver(g); return; }
+  World.buildRegion(id);
+  State.save();
+};
+
+World.returnRegion = function () {
+  const g = State.data, info = REGION_INFO[currentRegion] || { days: 2 };
+  Engine.advance(g, info.days * 9);
+  g.fatigue = Engine.clamp(g.fatigue + info.days * 5, 0, 120);
+  inRegion = false; const back = returnFromRegion || "hanging_market"; currentRegion = null;
+  Engine.push(g, "You make the long journey back to Ur-Axiom.", "travel");
+  if (g.over) { UI.gameOver(g); return; }
+  World.buildDistrict(back, true);
+  State.save();
+};
 
 function namedMeta(id, district) {
   const def = Engine.NPC_DEFS.find((d) => d.id === id); if (!def) return null;
@@ -1241,6 +1400,7 @@ World.enterBuilding = function (spec) {
 
   player.pos.set(0, 1.7, INNER - 3); yaw = Math.PI; pitch = 0;
   setInteriorFloorVis();
+  if (window.GameAudio) GameAudio.setDistrict("interior", false);
   World.updateHUD();
 };
 
@@ -1252,7 +1412,8 @@ World.exitBuilding = function () {
 /* Rebuild the scene in place (used when optional assets finish loading). */
 World.rebuildCurrent = function () {
   if (!started) return;
-  if (inInterior && interiorSpec) World.enterBuilding(interiorSpec);
+  if (inRegion && currentRegion) World.buildRegion(currentRegion);
+  else if (inInterior && interiorSpec) World.enterBuilding(interiorSpec);
   else if (State.data) World.buildDistrict(State.data.here, false);
 };
 
@@ -1489,6 +1650,11 @@ const THEMES = {
       box(7.4, 0.4, 7.4, 0x7a6444, 14, 9, -8, { tex: "brick" });
       landmark(14, -3, 4, "Enter the Market Hall",
         () => { World.enterBuilding(buildSpec("bazaar", "hanging_market")); return {}; }, 0xc8a050);
+      // the caravanserai — where every trade route in the world begins
+      box(6, 4, 6, 0x6a5838, -14, 2, -8, { tex: "brick" });
+      box(7, 0.5, 7, 0x7a6444, -14, 4.2, -8, { tex: "brick" });
+      landmark(-14, -3, 4, "The Caravanserai — travel the world's regions",
+        () => { World.openRegions(); return {}; }, 0xe6b450);
     },
   },
   god_quarter: {
@@ -1802,7 +1968,9 @@ World.updateHUD = function () {
   document.getElementById("hud-weather").textContent = AXIOM.WEATHER[g.weather].name;
   document.getElementById("hud-money").textContent = `${g.money} shekels`;
   const distChip = document.getElementById("hud-district");
-  if (inInterior && interiorSpec) {
+  if (inRegion && currentRegion && REGION_INFO[currentRegion]) {
+    distChip.innerHTML = `<span class="crest">${Art.emblem("world")}</span>${REGION_INFO[currentRegion].name}`;
+  } else if (inInterior && interiorSpec) {
     const fl = interiorSpec.floors[currentFloor];
     distChip.innerHTML = `<span class="crest">${Art.emblem(returnDistrict)}</span>${interiorSpec.title} · ${currentFloor + 1}F ${fl ? fl.name : ""}`;
   } else {

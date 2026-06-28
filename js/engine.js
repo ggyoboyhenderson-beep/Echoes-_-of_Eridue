@@ -235,6 +235,7 @@ Engine.driftEconomy = function (g) {
   for (const c of g.cascades) {
     if (c.id === "drought") { g.economy.grain *= 1.05; g.economy.bread *= 1.05; g.economy.water *= 1.03; }
     if (c.id === "windfall") { g.economy.grain *= 0.96; g.economy.bread *= 0.97; }
+    if (c.id === "war") { g.economy.contraband *= 1.02; g.economy.parts *= 1.01; g.economy.stim *= 1.01; }
   }
 };
 
@@ -293,6 +294,23 @@ Engine.triggerCascade = function (g, id) {
       g.powerOut = true;
       g.flags.powerUntil = g.day + 1;
       Engine.push(g, "The grid fails across the Neon Labyrinth. In the dark, the clinics fill and the surveillance net grows gaps.", "world");
+      break;
+    case "election": {
+      g.cascades.push({ id: "election", label: "Council election", day: g.day, ttl: 6 });
+      // a faction gains the upper hand; standings and prices shift accordingly
+      const facs = ["guild", "corporate", "broken_crown", "ironwall", "temple"];
+      const winner = Engine.pick(facs);
+      g.flags.rulingFaction = winner;
+      Engine.shiftFaction(g, winner, 4);
+      if (winner === "corporate") { g.economy.stim *= 1.04; g.economy.augkit *= 1.04; }
+      if (winner === "guild") { g.economy.cloth *= 0.97; g.economy.parts *= 0.97; }
+      Engine.push(g, `A council election turns: ${AXIOM.FACTIONS ? AXIOM.FACTIONS[winner] : winner} gains the upper hand. The city's terms shift for a season.`, "world");
+      break;
+    }
+    case "war":
+      g.cascades.push({ id: "war", label: "Border war", day: g.day, ttl: 10 });
+      g.economy.contraband *= 1.08; g.economy.parts *= 1.05; g.economy.stim *= 1.05;
+      Engine.push(g, "War flares on a distant border. Trade routes tighten; contraband, parts, and medicine all climb, and the corporations are hiring.", "world");
       break;
   }
 };
@@ -356,7 +374,7 @@ Engine.newDay = function (g) {
 
   // The world acts on its own: a small chance each day of an unforetold event.
   if (Engine.chance(0.18) && !g.pendingOmen) {
-    Engine.triggerCascade(g, Engine.pick(["drought", "unrest", "raid", "power", "windfall"]));
+    Engine.triggerCascade(g, Engine.pick(["drought", "unrest", "raid", "power", "windfall", "election", "war"]));
   }
   Engine.push(g, `Day ${g.day} begins. ${AXIOM.WEATHER[g.weather].name}.`, "day");
 };

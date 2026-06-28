@@ -260,6 +260,26 @@ Actions.omen = function (g) {
   return Actions._do(g, 1, `You sit with the temple readers. ${text} Dismiss it as superstition at your own expense.`, "omen");
 };
 
+/* ---- SCOUT a world region (outside the city) ----------------------------- */
+Actions.scout = function (g, regionName, goods) {
+  Engine.advance(g, 3);
+  g.fatigue = Engine.clamp(g.fatigue + 8, 0, 120);
+  Engine.practice(g, "navigation", 2);
+  const r = Math.random();
+  if (r < 0.3 && goods && goods.length) {
+    const loot = Engine.pick(goods); g.inventory[loot] = (g.inventory[loot] || 0) + 1;
+    const msg = `You range across ${regionName} and come back with ${AXIOM.GOODS[loot] ? AXIOM.GOODS[loot].name : loot}.`;
+    Engine.push(g, msg, "explore"); return { msg, kind: "explore" };
+  }
+  if (r < 0.5) {
+    const coins = 5 + Engine.rand(18); g.money += coins;
+    const msg = `You scout ${regionName} and earn ${coins} shekels guiding or trading along the way.`;
+    Engine.push(g, msg, "explore"); return { msg, kind: "explore" };
+  }
+  const msg = `You scout ${regionName}, learning its ground a little better.`;
+  Engine.push(g, msg, "explore"); return { msg, kind: "explore" };
+};
+
 /* ---- SEARCH a room inside a building ------------------------------------- */
 Actions.search = function (g) {
   Engine.advance(g, 1);
