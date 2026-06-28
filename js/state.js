@@ -52,6 +52,12 @@ State.newGame = function (protoId) {
     fragments: [],    // discovered conspiracy fragment ids
     flags: {},        // misc story flags
 
+    // Play-style profile (how you actually play) — drives reactive storylines.
+    style: { violence: 0, deception: 0, charity: 0, piety: 0, crime: 0, commerce: 0, wander: 0, loyalty: 0 },
+    heat: 0,          // notoriety / wanted level (0..100), decays over time
+    bounty: 0,        // coin a hunter would collect for you
+    story: { seen: [], stage: 0 },  // reactive-story progress
+
     // Living-world simulation
     weather: "clear",
     weatherEnds: 1,

@@ -375,4 +375,46 @@ AXIOM.REVELATION =
   "now about power, time, and what it costs to be a person inside history. No one will " +
   "believe you. That was always the point.";
 
+/* --------------------------------------------------------------------------
+ * CRIME JOBS — the underworld career. Jobs unlock with your underworld rank;
+ * each escalates the risk, the pay, the heat, and the standing it buys you with
+ * the criminal factions. This is a path a protagonist can rise through.
+ * skill: which competence the job tests. faction: who you earn standing with.
+ * -------------------------------------------------------------------------- */
+AXIOM.CRIME_JOBS = [
+  { id: "lift",      name: "Work a pickpocket route", minRank: 0, skill: "deception",  diff: 40, payMin: 12, payMax: 30,  heat: 4,  faction: "street",
+    desc: "Run the crowds at the Hanging Market and the lower terraces. Low pay, low heat — the first rung." },
+  { id: "boost",     name: "Boost a parked hauler",   minRank: 1, skill: "navigation", diff: 48, payMin: 25, payMax: 60,  heat: 8,  faction: "ironwall",
+    desc: "Lift goods off a corporate hauler before the route resumes. Quick, if your nerve holds." },
+  { id: "burgle",    name: "Burgle an empty office",  minRank: 1, skill: "deception",  diff: 52, payMin: 40, payMax: 90,  heat: 12, faction: "ironwall",
+    desc: "A Spire clerk's flat, emptied during a curfew window. In and out before the patrol cycles." },
+  { id: "crack",     name: "Crack a corp data-vault", minRank: 2, skill: "hacking",    diff: 58, payMin: 70, payMax: 150, heat: 16, faction: "street",
+    desc: "Pull a saleable dataset out of a Meridian node while the grid's down. Pure skill, pure risk." },
+  { id: "run",       name: "Run a smuggling route",   minRank: 2, skill: "navigation", diff: 56, payMin: 60, payMax: 130, heat: 14, faction: "substrata",
+    desc: "Carry a sealed load through the Sub-Strata past three factions' eyes. The map is everything." },
+  { id: "racket",    name: "Run a protection racket", minRank: 3, skill: "rhetoric",   diff: 60, payMin: 90, payMax: 180, heat: 18, faction: "ironwall",
+    desc: "Lean on a row of market stalls for the family's cut. Some pay; some need persuading." },
+  { id: "heist",     name: "Crew a warehouse heist",  minRank: 3, skill: "blade",      diff: 64, payMin: 140, payMax: 280, heat: 24, faction: "ironwall",
+    desc: "A guild bonded-goods warehouse, a six-minute window, a crew counting on you. It can go very wrong." },
+  { id: "vault",     name: "The Spire vault job",     minRank: 4, skill: "hacking",    diff: 70, payMin: 300, payMax: 600, heat: 34, faction: "street",
+    desc: "The job every earner dreams of and most die on: a corporate vault, above the smog. Boss work." },
+];
+
+/* --------------------------------------------------------------------------
+ * REGION ECONOMICS — each region produces some goods cheaply and wants others
+ * dearly. Buy where it's made, sell where it's needed: the Dyula's whole trade.
+ * produces -> ~0.6x price · wants -> ~1.7x price (see Engine.regionPrice).
+ * barter: the Steppe values goods over coin — your coin buys little there.
+ * -------------------------------------------------------------------------- */
+AXIOM.REGION_ECON = {
+  ur_basin:   { produces: ["grain", "fish", "water", "bread"], wants: ["cloth", "parts", "stim"] },
+  haze_coast: { produces: ["parts", "stim", "augkit"],          wants: ["grain", "fish", "water"] },
+  obsidian:   { produces: ["relic", "parts"],                   wants: ["grain", "bread", "cloth"] },
+  delta:      { produces: ["fish", "water", "cloth"],           wants: ["parts", "stim", "grain"] },
+  steppe:     { produces: ["grain", "cloth"],                   wants: ["parts", "stim", "augkit"], barter: true },
+  fracture:   { produces: ["parts", "contraband"],              wants: ["stim", "water", "grain"] },
+  holds:      { produces: ["cloth", "relic", "grain"],          wants: ["parts", "stim", "augkit"] },
+  deep_south: { produces: ["relic", "cloth", "grain"],          wants: ["parts", "augkit", "contraband"] },
+};
+
 if (typeof module !== "undefined") module.exports = AXIOM;

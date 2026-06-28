@@ -78,6 +78,52 @@ Engine.shiftFaction = function (g, faction, delta) {
   g.factionRep[faction] = Engine.clamp((g.factionRep[faction] || 0) + delta, -100, 100);
 };
 
+/* ---- play-style profile (how you actually play) ------------------------- */
+Engine.style = function (g, key, n) {
+  if (!g.style) g.style = { violence: 0, deception: 0, charity: 0, piety: 0, crime: 0, commerce: 0, wander: 0, loyalty: 0 };
+  g.style[key] = (g.style[key] || 0) + (n == null ? 1 : n);
+};
+/* The trait the player leans on most — used to flavour reactive story beats. */
+Engine.dominantStyle = function (g) {
+  if (!g.style) return "none";
+  let best = "none", bv = 2; // need at least a little to count
+  for (const k of Object.keys(g.style)) if (g.style[k] > bv) { bv = g.style[k]; best = k; }
+  return best;
+};
+
+/* ---- heat / notoriety --------------------------------------------------- */
+Engine.addHeat = function (g, n) {
+  g.heat = Engine.clamp((g.heat || 0) + n, 0, 100);
+  if (n > 0) g.bounty = (g.bounty || 0) + Math.round(n * (3 + Engine.rand(5)));
+  if (n >= 12) Engine.push(g, `Word of what you did spreads. Heat rises (${Math.round(g.heat)}).`, "rep");
+};
+Engine.coolHeat = function (g, n) { g.heat = Engine.clamp((g.heat || 0) - n, 0, 100); if (g.heat <= 0) g.bounty = 0; };
+
+/* ---- the criminal path: underworld standing & rank ---------------------- *
+ * Built from how much crime you've done and how the criminal factions regard
+ * you. Rank gates the jobs the underworld will trust you with.              */
+Engine.RANKS = ["Citizen", "Petty Thief", "Earner", "Operator", "Lieutenant", "Underworld Boss"];
+Engine.underworldStanding = function (g) {
+  const crime = (g.style && g.style.crime) || 0;
+  const fac = Math.max(0, Engine.factionRep(g, "ironwall")) + Math.max(0, Engine.factionRep(g, "street")) + Math.max(0, Engine.factionRep(g, "substrata"));
+  return Math.round(crime * 2 + fac);  // 0..~300
+};
+Engine.underworldRank = function (g) {
+  const s = Engine.underworldStanding(g);
+  const t = [0, 8, 30, 70, 130, 220];
+  let r = 0; for (let i = 0; i < t.length; i++) if (s >= t[i]) r = i;
+  return r;
+};
+
+/* Region trade price for a good (its own supply/demand, then live drift). */
+Engine.regionPrice = function (g, goodId, regionId) {
+  const good = AXIOM.GOODS[goodId]; if (!good) return 1;
+  const econ = (AXIOM.REGION_ECON && AXIOM.REGION_ECON[regionId]) || null;
+  let mod = 1;
+  if (econ) { if (econ.produces && econ.produces.includes(goodId)) mod *= 0.6; if (econ.wants && econ.wants.includes(goodId)) mod *= 1.7; }
+  return Math.max(1, Math.round(good.base * mod * (g.economy[goodId] || 1)));
+};
+
 /* Generalised memory for any NPC, with optional social propagation for hubs. */
 Engine.rememberMeta = function (g, meta, delta, note) {
   const rec = Engine.ensureNPC(g, meta.id);
@@ -324,10 +370,12 @@ Engine.expireCascades = function (g) {
 };
 
 Engine.dangerNow = function (g, district) {
-  let d = AXIOM.DISTRICTS[district].danger;
+  let d = AXIOM.DISTRICTS[district] ? AXIOM.DISTRICTS[district].danger : 2;
   if (district === "ironwall" && g.cascades.some((c) => c.id === "raid")) d += 2;
   if (district === "neon_labyrinth" && g.powerOut) d += 1;
   if (g.weather === "sandstorm" && district !== "sub_strata") d = Math.max(0, d - 1);
+  // Notoriety: the law-and-order districts get hostile when you're wanted.
+  if ((g.heat || 0) > 30 && (district === "spire" || district === "ziggurat_crown" || district === "god_quarter")) d += Math.floor(g.heat / 25);
   return d;
 };
 
@@ -376,6 +424,10 @@ Engine.newDay = function (g) {
   if (Engine.chance(0.18) && !g.pendingOmen) {
     Engine.triggerCascade(g, Engine.pick(["drought", "unrest", "raid", "power", "windfall", "election", "war"]));
   }
+  // Notoriety fades if you lie low; faster on the road, slower while infamous.
+  if (g.heat > 0) { Engine.coolHeat(g, 4); if (g.heat <= 0) Engine.push(g, "The heat on you has cooled. You can move freely again.", "world"); }
+  // Reactive storylines react to a new day, if the system is present.
+  if (typeof Story !== "undefined" && Story.onNewDay) Story.onNewDay(g);
   Engine.push(g, `Day ${g.day} begins. ${AXIOM.WEATHER[g.weather].name}.`, "day");
 };
 

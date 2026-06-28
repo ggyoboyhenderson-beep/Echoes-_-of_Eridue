@@ -52,7 +52,17 @@ Actions.travel = function (g, dest) {
       msg += ` You're jumped en route. They take ${loss} shekels and leave you sore.`;
     }
   }
+  // Smuggling: carrying contraband through a watched district can get it seized.
+  const contraband = g.inventory.contraband || 0;
+  if (contraband > 0 && (dest === "spire" || dest === "ziggurat_crown" || dest === "god_quarter" || (g.heat || 0) > 25)) {
+    const evade = Engine.check(g, "deception", 45 + Math.round((g.heat || 0) / 3));
+    if (!evade.ok) {
+      g.inventory.contraband = 0; Engine.addHeat(g, 10); Engine.shiftFaction(g, "guild", -3);
+      msg += ` A checkpoint search turns up your contraband — ${contraband} unit${contraband > 1 ? "s" : ""} seized, and your name goes on a list.`;
+    } else { Engine.style(g, "crime", 1); msg += " You run the checkpoint clean, contraband and all."; }
+  }
   g.here = dest;
+  Engine.style(g, "wander", 0.5);
   return Actions._do(g, hours, msg, "travel");
 };
 
@@ -140,6 +150,9 @@ Actions.work = function (g) {
   }
   g.money += pay;
   Engine.practice(g, skill, 2);
+  Engine.style(g, "commerce", 1);
+  if (d === "broken_crown") Engine.style(g, "charity", 1);
+  if (d === "ironwall") Engine.style(g, "violence", 0.5);
   return Actions._do(g, 4, `${msg} (+${pay} shekels)`, "work");
 };
 
@@ -152,6 +165,7 @@ Actions.train = function (g, key) {
   }
   if (g.fatigue > 85) return { msg: "You're too exhausted to train usefully. Sleep first.", kind: "warn" };
   Engine.practice(g, key, 4);
+  if (key === "blade") Engine.style(g, "violence", 1);
   g.fatigue = Engine.clamp(g.fatigue + 8, 0, 120);
   return Actions._do(g, 3, `You drill ${AXIOM.SKILLS[key].name.toLowerCase()} until the body remembers it a little better. (now ${Engine.skillLevel(g, key)})`, "train");
 };
@@ -244,6 +258,8 @@ Actions.converse = function (g, meta, mode) {
   }
 
   delta = Math.round(delta * bias);
+  if (mode === "Trade") Engine.style(g, "commerce", 1);
+  if (mode === "Friendly" && delta > 0) { Engine.style(g, "loyalty", 1); Engine.style(g, "charity", 0.5); }
   Engine.rememberMeta(g, meta, delta, delta >= 7 ? `${meta.name} warms to you` : null);
   Engine.advance(g, 1);
 
@@ -260,11 +276,111 @@ Actions.omen = function (g) {
   return Actions._do(g, 1, `You sit with the temple readers. ${text} Dismiss it as superstition at your own expense.`, "omen");
 };
 
+/* ==========================================================================
+ * CRIME — theft, robbery, fencing, smuggling. Crime pays in coin and in
+ * standing with the criminal factions (Ironwall, the street, the Sub-Strata),
+ * and costs you standing with the law (Guild, temple, corporations) plus heat.
+ * ========================================================================== */
+
+/* Rob a specific person. Stealth (deception) if they don't notice; if it turns
+ * to force, blade decides it. Success → coin/goods; failure → heat & enemies. */
+Actions.rob = function (g, meta) {
+  Engine.ensureNPC(g, meta.id);
+  const here = g.here;
+  const danger = Engine.dangerNow(g, here);
+  const stealth = Engine.skillLevel(g, "deception");
+  const ck = Engine.check(g, "deception", 48 + danger * 2 - Math.round((g.npc[meta.id].disp) / 5));
+  Engine.style(g, "crime", 2);
+  Engine.advance(g, 1);
+  if (ck.ok) {
+    const take = 10 + Engine.rand(30) + Math.round(stealth / 4);
+    g.money += take;
+    // sometimes lift an item too
+    if (Engine.chance(0.4)) { const loot = Engine.pick(["parts", "cloth", "stim", "contraband"]); g.inventory[loot] = (g.inventory[loot] || 0) + 1; }
+    Engine.addHeat(g, 4);
+    // the underworld respects a clean lift
+    Engine.shiftFaction(g, "ironwall", 1); Engine.shiftFaction(g, "street", 1);
+    const msg = `You lift ${take} shekels off ${meta.name} clean — they never feel it.`;
+    Engine.push(g, msg, "rep"); return { msg, kind: "rep", robbed: true };
+  }
+  // caught: it becomes force or flight
+  Engine.style(g, "violence", 1);
+  Engine.rememberMeta(g, meta, -16, `${meta.name} names you a thief`);
+  Engine.addHeat(g, 16);
+  Engine.shiftFaction(g, People && People.districtFaction ? (People.districtFaction[here] || "none") : "none", -6);
+  Engine.shiftFaction(g, "guild", -3); Engine.shiftFaction(g, "corporate", -2);
+  let msg = `${meta.name} catches your hand. The street turns on you — your name is mud here now.`;
+  if (Engine.chance(0.5)) { Engine.injure(g, "scuffle wound", 1); msg += " It comes to blows and you take a hit getting clear."; }
+  Engine.push(g, msg, "warn"); return { msg, kind: "warn", robbed: false };
+};
+
+/* Fence illicit goods (contraband / lifted items) to the black market. Needs a
+ * criminal district. Discreet, but risky while you're already hot. */
+Actions.fence = function (g) {
+  const ok = ["ironwall", "neon_labyrinth", "sub_strata", "broken_crown"].includes(g.here);
+  if (!ok) return { msg: "There's no black market here that would touch hot goods.", kind: "warn" };
+  const illicit = ["contraband", "relic", "parts", "stim"];
+  const have = illicit.find((id) => (g.inventory[id] || 0) > 0);
+  if (!have) return { msg: "You've nothing a fence would want.", kind: "warn" };
+  g.inventory[have]--;
+  const price = Math.round(Engine.price(g, have, g.here) * 1.3); // premium, no questions asked
+  g.money += price;
+  Engine.style(g, "crime", 1);
+  Engine.shiftFaction(g, g.here === "sub_strata" ? "substrata" : g.here === "neon_labyrinth" ? "street" : "ironwall", 1);
+  Engine.advance(g, 1);
+  let msg = `A fence takes the ${AXIOM.GOODS[have].name} off your hands for ${price} shekels, no questions.`;
+  if ((g.heat || 0) > 40 && Engine.chance(0.4)) { Engine.addHeat(g, 6); msg += " You're watched on the way out — this raised your profile."; }
+  Engine.push(g, msg, "trade"); return { msg, kind: "trade" };
+};
+
+/* Take an underworld job. Gated by rank; tests the job's skill; success pays
+ * and raises your standing with its faction; failure brings heat and worse.
+ * This is the criminal career — each rung opens the next. */
+Actions.crimeJob = function (g, jobId) {
+  const job = (AXIOM.CRIME_JOBS || []).find((j) => j.id === jobId);
+  if (!job) return { msg: "No such job.", kind: "warn" };
+  if (Engine.underworldRank(g) < job.minRank)
+    return { msg: `The underworld won't trust you with that yet. You need to be a ${Engine.RANKS[job.minRank]} first.`, kind: "warn" };
+  if (job.skill === "hacking" && !g.skills.hacking.known)
+    return { msg: "That job needs hacking you haven't learned. Find a teacher first.", kind: "warn" };
+
+  Engine.advance(g, 4);
+  g.fatigue = Engine.clamp(g.fatigue + 10, 0, 120);
+  Engine.style(g, "crime", 3);
+  if (job.skill === "blade") Engine.style(g, "violence", 2);
+  const ck = Engine.check(g, job.skill, job.diff + Math.round((g.heat || 0) / 6));
+
+  if (ck.ok) {
+    const pay = job.payMin + Engine.rand(job.payMax - job.payMin);
+    g.money += pay;
+    Engine.addHeat(g, Math.round(job.heat * 0.6));
+    Engine.shiftFaction(g, job.faction, 5);
+    Engine.shiftFaction(g, "guild", -2); Engine.shiftFaction(g, "corporate", -1);
+    g.flags.crimeJobsDone = (g.flags.crimeJobsDone || 0) + 1;
+    const rankAfter = Engine.underworldRank(g);
+    let msg = `Job done — "${job.name}". You clear ${pay} shekels and your name climbs in the underworld.`;
+    if (rankAfter > (g.flags.lastRank || 0)) { g.flags.lastRank = rankAfter; msg += ` You're known now as a ${Engine.RANKS[rankAfter]}.`; }
+    Engine.push(g, msg, "rep");
+    return { msg, kind: "rep", jobOk: true };
+  }
+  // failure: heat, broken trust, and a real chance of blood or a cell
+  Engine.addHeat(g, job.heat + 6);
+  Engine.shiftFaction(g, job.faction, -2);
+  Engine.shiftFaction(g, "guild", -4); Engine.shiftFaction(g, "corporate", -3);
+  let msg = `The job — "${job.name}" — goes wrong. The heat on you spikes and the family is not pleased.`;
+  const r = Math.random();
+  if (r < 0.4) { Engine.injure(g, "got hurt on the job", 1 + Engine.rand(2)); msg += " You barely get clear, and not unhurt."; }
+  else if (r < 0.6) { const fine = Math.min(g.money, 20 + Engine.rand(40)); g.money -= fine; g.day += 1; Engine.advance(g, 6); msg += ` You're held a day and shaken down for ${fine} shekels before you're let loose.`; }
+  Engine.push(g, msg, "warn");
+  return { msg, kind: "warn", jobOk: false };
+};
+
 /* ---- SCOUT a world region (outside the city) ----------------------------- */
 Actions.scout = function (g, regionName, goods) {
   Engine.advance(g, 3);
   g.fatigue = Engine.clamp(g.fatigue + 8, 0, 120);
   Engine.practice(g, "navigation", 2);
+  Engine.style(g, "wander", 1);
   const r = Math.random();
   if (r < 0.3 && goods && goods.length) {
     const loot = Engine.pick(goods); g.inventory[loot] = (g.inventory[loot] || 0) + 1;
@@ -303,6 +419,7 @@ Actions.search = function (g) {
 Actions.pray = function (g) {
   Engine.advance(g, 2);
   g.fatigue = Engine.clamp(g.fatigue + 6, 0, 120);
+  Engine.style(g, "piety", 2);
   Engine.shiftFaction(g, "temple", 3);
   g.rep[g.here] = Engine.clamp((g.rep[g.here] || 0) + 2, -100, 100);
   // The divine occasionally answers in ways too specific to be chance.

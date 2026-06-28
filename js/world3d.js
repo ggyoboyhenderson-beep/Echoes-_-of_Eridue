@@ -92,6 +92,7 @@ World.init = function () {
   document.getElementById("dlg-friendly").onclick = () => chooseDialog("Friendly");
   document.getElementById("dlg-neutral").onclick = () => chooseDialog("Neutral");
   document.getElementById("dlg-trade").onclick = () => chooseDialog("Trade");
+  document.getElementById("dlg-rob").onclick = () => chooseRob();
   document.getElementById("dlg-leave").onclick = () => closeDialog();
   document.addEventListener("pointerlockmove", () => {});
   document.addEventListener("mousemove", (e) => {
@@ -654,6 +655,15 @@ World.buildDistrict = function (id, spawnCenter) {
     }
   }
 
+  // the underworld has a presence in the criminal districts — fence & job board
+  if (["ironwall", "neon_labyrinth", "sub_strata", "broken_crown"].includes(id)) {
+    const ux = -6, uz = 9;
+    box(0.18, 0.18, 0.18, 0xc0392b, ux, 2.2, uz, { emissive: 0xc0392b, ei: 1.3, tex: null });
+    light(0xc0392b, 2.2, ux, 2.4, uz, 6);
+    interactables.push({ type: "landmark", label: "The Underworld — fence goods & take jobs",
+      pos: new THREE.Vector3(ux, 1, uz), radius: 4, mesh: null, run: () => { World.openCrime(); return {}; } });
+  }
+
   // spawn
   if (spawnCenter) { player.pos.set(0, 1.7, 16); yaw = Math.PI; pitch = 0; }
   player.vel.set(0, 0, 0);
@@ -1039,6 +1049,7 @@ World.buildRegion = function (id) {
   const ST = (label, color, x, z, run) => interactables.push({ type: "station", label, color, pos: new THREE.Vector3(x, 1, z), radius: ACTIVATE, mesh: box(1.1, 1.2, 1.1, color, x, 0.6, z, { emissive: color, ei: 0.3, tex: null }), run });
   ST("Scout the region", 0x5a7a5a, -8, 4, (g) => Actions.scout(g, info.name, info.goods));
   ST("Make camp & rest", 0x6b5030, 8, 4, (g) => Actions.sleep(g));
+  ST("Trade with locals", 0xc8a050, 8, -4, () => { World.openRegionMarket(id); return {}; });
   ST("Train navigation", 0x4a6a8a, -8, -4, () => ({ panel: "skills" }));
   // return gate
   const gx = 0, gz = BOUND - 3;
@@ -1049,6 +1060,78 @@ World.buildRegion = function (id) {
   player.pos.set(0, 1.7, 16); yaw = Math.PI; pitch = 0; player.vel.set(0, 0, 0);
   if (window.GameAudio) GameAudio.setDistrict("region", Engine.isNight(g));
   World.updateHUD();
+};
+
+/* The underworld: fence goods and take jobs to climb the criminal ladder. */
+World.openCrime = function () {
+  if (document.pointerLockElement) document.exitPointerLock();
+  const g = State.data;
+  const rank = Engine.underworldRank(g), standing = Engine.underworldStanding(g);
+  let html = `<h2>The Underworld</h2>`;
+  html += `<p class="muted small">Your standing is the only currency the families trust. Heat is the price. Rise far enough and the city's locks open for you.</p>`;
+  html += `<div style="display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px">
+    <span><b style="color:var(--bad)">${Engine.RANKS[rank]}</b> <span class="muted small">· standing ${standing} · heat ${Math.round(g.heat || 0)}</span></span>
+    <button class="ghost" onclick="window.World3D.fenceGoods()">Fence hot goods</button></div>`;
+  html += `<div style="max-height:46vh;overflow-y:auto">`;
+  for (const job of AXIOM.CRIME_JOBS) {
+    const locked = rank < job.minRank;
+    html += `<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span><b style="color:${locked ? "var(--muted)" : "var(--sand)"}">${job.name}</b> <span class="muted small">· ${job.skill} · ${job.payMin}–${job.payMax}sh · heat ${job.heat}</span></span>
+        ${locked ? `<span class="muted small">needs ${Engine.RANKS[job.minRank]}</span>` : `<button class="primary" onclick="window.World3D.takeCrimeJob('${job.id}')">Take job</button>`}
+      </div><div class="muted small" style="margin-top:3px">${job.desc}</div></div>`;
+  }
+  html += `</div>`;
+  UI.modal(html);
+};
+World.takeCrimeJob = function (id) {
+  UI.closeModal();
+  const g = State.data; const res = Actions.crimeJob(g, id);
+  if (res && res.msg) toast(res.msg, res.kind);
+  if (typeof Story !== "undefined" && Story.check) Story.check(g);
+  State.save(); World.updateHUD();
+  if (g.over) UI.gameOver(g);
+};
+World.fenceGoods = function () {
+  UI.closeModal();
+  const g = State.data; const res = Actions.fence(g);
+  if (res && res.msg) toast(res.msg, res.kind);
+  State.save(); World.updateHUD();
+};
+
+/* A region's own market — different prices from the City. Buy what's produced
+ * cheap here, carry it to where it's wanted dear. The Dyula's whole craft. */
+World.openRegionMarket = function (regionId) {
+  if (document.pointerLockElement) document.exitPointerLock();
+  const g = State.data; const econ = AXIOM.REGION_ECON[regionId] || {};
+  const info = REGION_INFO[regionId] || { name: regionId };
+  const goods = Array.from(new Set([].concat(econ.produces || [], econ.wants || [], ["grain", "water", "parts"])));
+  let html = `<h2>Trade — ${info.name}</h2><p class="muted small">${econ.barter ? "These people value goods over coin; your shekels buy little here. Trade what you carry." : "Local prices. What's made here is cheap; what they lack is dear."}</p>`;
+  for (const id of goods) {
+    const price = Engine.regionPrice(g, id, regionId);
+    const sell = Math.max(1, Math.round(price * (econ.barter ? 0.5 : 0.9)));
+    const tagP = (econ.produces || []).includes(id) ? '<span class="muted small">· local</span>' : (econ.wants || []).includes(id) ? '<span style="color:var(--warn)" class="small">· in demand</span>' : "";
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">
+      <span>${AXIOM.GOODS[id].name} ${tagP}</span>
+      <span><span class="muted small">buy ${price} · sell ${sell}${(g.inventory[id] || 0) ? ` (have ${g.inventory[id]})` : ""}</span>
+        <button class="ghost mini" onclick="window.World3D.regionBuy('${regionId}','${id}')">buy</button>
+        <button class="ghost mini" onclick="window.World3D.regionSell('${regionId}','${id}')">sell</button></span></div>`;
+  }
+  UI.modal(html);
+};
+World.regionBuy = function (regionId, id) {
+  const g = State.data; const cost = Engine.regionPrice(g, id, regionId);
+  if (g.money < cost) { toast(`You can't afford ${AXIOM.GOODS[id].name} (${cost}).`, "warn"); return; }
+  g.money -= cost; g.inventory[id] = (g.inventory[id] || 0) + 1;
+  g.economy[id] = Engine.clamp((g.economy[id] || 1) * 1.01, 0.4, 4);
+  Engine.style(g, "commerce", 1); State.save(); World.updateHUD(); World.openRegionMarket(regionId);
+};
+World.regionSell = function (regionId, id) {
+  const g = State.data; if ((g.inventory[id] || 0) <= 0) { toast("You have none of those.", "warn"); return; }
+  const econ = AXIOM.REGION_ECON[regionId] || {};
+  const price = Math.max(1, Math.round(Engine.regionPrice(g, id, regionId) * (econ.barter ? 0.5 : 0.9)));
+  g.inventory[id]--; g.money += price; g.economy[id] = Engine.clamp((g.economy[id] || 1) * 0.99, 0.4, 4);
+  Engine.style(g, "commerce", 1); State.save(); World.updateHUD(); World.openRegionMarket(regionId);
 };
 
 World.openRegions = function () {
@@ -1967,6 +2050,8 @@ World.updateHUD = function () {
     `${String(g.hour).padStart(2, "0")}:00 · ${per.name}${Engine.isNight(g) ? " · night" : ""}`;
   document.getElementById("hud-weather").textContent = AXIOM.WEATHER[g.weather].name;
   document.getElementById("hud-money").textContent = `${g.money} shekels`;
+  const heatEl = document.getElementById("hud-heat");
+  if (heatEl) heatEl.textContent = (g.heat || 0) > 0 ? `🔥 Heat ${Math.round(g.heat)}` : "";
   const distChip = document.getElementById("hud-district");
   if (inRegion && currentRegion && REGION_INFO[currentRegion]) {
     distChip.innerHTML = `<span class="crest">${Art.emblem("world")}</span>${REGION_INFO[currentRegion].name}`;
@@ -2147,6 +2232,19 @@ function chooseDialog(mode) {
   World.updateHUD();
   State.save();
   if (res.openMarket && mode === "Trade") { closeDialog(); World.togglePanels(true); World.showPanel("market"); }
+}
+
+function chooseRob() {
+  const g = State.data, d = World._dialog; if (!d || g.over) return;
+  const res = Actions.rob(g, d.meta);
+  d.lastLine = res.msg;
+  document.getElementById("dlg-line").textContent = res.msg;
+  renderDialog(false);
+  World.updateHUD();
+  State.save();
+  if (typeof Story !== "undefined" && Story.check) Story.check(g);
+  // a botched robbery ends the conversation
+  if (!res.robbed) setTimeout(closeDialog, 900);
 }
 
 function closeDialog() {

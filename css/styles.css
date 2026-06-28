@@ -294,3 +294,10 @@ button.mini { padding: 3px 9px; font-size: 12px; }
 body.era-neon #grade::before { background:
   radial-gradient(ellipse at center, rgba(0,0,0,0) 48%, rgba(0,0,8,0.5) 100%),
   radial-gradient(ellipse at 50% 60%, rgba(120,40,160,0.10), rgba(0,0,0,0) 55%); }
+
+/* ---- Crime: rob button + heat ------------------------------------------- */
+.dlg-foot { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-top: 8px; }
+.dlg-c.rob { flex: 0 0 auto; border-color: #6a2a2a; color: var(--bad); padding: 8px 14px; }
+.dlg-c.rob:hover { background: #3a1a1a; }
+#hud-heat { color: var(--bad); border-color: #5a2a2a; }
+#hud-heat:empty { display: none; }
