@@ -151,6 +151,7 @@ World.start = function () {
 
 /* ---- helpers to add geometry -------------------------------------------- */
 let currentBuildKind = null;   // detail texture used by theme.build() structures
+let currentDistrictId = null;  // district being built (for generated interiors)
 
 function box(w, h, d, color, x, y, z, opts = {}) {
   const matOpts = {
@@ -550,6 +551,7 @@ World.buildDistrict = function (id, spawnCenter) {
   const d = AXIOM.DISTRICTS[id];
   const rnd = mulberry32(hash(id));
   const theme = THEMES[id] || THEMES._default;
+  currentDistrictId = id;
 
   scene.background = new THREE.Color(theme.sky);
   scene.fog = new THREE.Fog(theme.sky, theme.fogNear, theme.fogFar);
@@ -631,6 +633,19 @@ World.buildDistrict = function (id, spawnCenter) {
   spawnTraffic(id, Engine.isNight(g));
   if (id !== "sub_strata") buildSurroundCity(theme, Engine.isNight(g));
   buildGroundTraffic(id, Engine.isNight(g));
+
+  // a few enterable buildings at the walls — the reachable edge of the city
+  // that stretches beyond this district
+  if (id !== "god_quarter" && id !== "sub_strata") {
+    const era = DISTRICT_ERA[id] || "market";
+    for (let i = 0; i < 4; i++) {
+      const a = Math.PI / 4 + i * Math.PI / 2;
+      const ex = Math.cos(a) * (BOUND - 3), ez = Math.sin(a) * (BOUND - 3);
+      const bw = 3.5, bh = 5 + rnd() * 3;
+      box(bw, bh, bw, theme.wall, ex, bh / 2, ez, { rough: 0.9 });
+      registerBuilding(ex, ez, bw, i % 2 ? "Outer-City Home" : "Outer-City Office", i % 2 ? "home" : "office", era);
+    }
+  }
 
   // spawn
   if (spawnCenter) { player.pos.set(0, 1.7, 16); yaw = Math.PI; pitch = 0; }
@@ -976,6 +991,11 @@ function _fxPlant(x, z, y, p) {
 function _fxArt(x, z, y, p, faceZ) { box(0.9, 0.7, 0.05, p.accent, x, y + 2.4, z, { tex: "cloth" }); }
 function _fxCrate(x, z, y) { box(0.7, 0.7, 0.7, 0x6a5236, x, y + 0.35, z, { tex: "plank" }); }
 function _fxLamp(x, z, y, p) { box(0.16, 0.16, 0.16, p.screen, x, y + 1.6, z, { emissive: p.screen, ei: 1.2, tex: null }); light(p.screen, 3, x, y + 1.6, z, 8); }
+function _fxWardrobe(x, z, y, p) { box(1.2, 2.0, 0.6, shadeHex(p.wood, 0.8), x, y + 1.0, z, { tex: null, rough: 0.85 }); box(0.05, 1.2, 0.05, p.accent, x, y + 1.0, z + 0.32, { tex: null }); }
+function _fxStove(x, z, y, p) { box(0.8, 0.9, 0.7, p.metal, x, y + 0.45, z, { tex: p.glow ? "panel" : "stone", metal: 0.3 }); box(0.6, 0.2, 0.5, 0xff7a25, x, y + 0.95, z, { emissive: 0xff6a10, ei: 1.1, tex: null }); }
+function _fxStool(x, z, y, p) { box(0.3, 0.45, 0.3, p.wood, x, y + 0.22, z, { tex: null }); box(0.34, 0.08, 0.34, shadeHex(p.wood, 1.2), x, y + 0.46, z, { tex: null }); }
+function _fxWorkbench(x, z, y, p) { box(1.6, 0.9, 0.7, p.metal, x, y + 0.45, z, { tex: "panel", metal: 0.3 }); for (let i = 0; i < 3; i++) box(0.18, 0.18, 0.18, [0xb0452b, 0x2b7ab0, 0x2bb06a][i], x - 0.5 + i * 0.5, y + 1.0, z, { tex: null }); }
+function _fxBarrel(x, z, y) { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.8, 10), new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.85 })); m.position.set(x, y + 0.4, z); scene.add(m); }
 
 /* Furnish a room by its function. Anchors hug the walls so the floor stays
  * walkable; the station ring (r~7.5) and the door (+z) are kept clear. */
@@ -1006,39 +1026,59 @@ function furnishRoom(room, y, era, floorDef) {
   } else if (room === "storeroom") {
     for (let i = 0; i < 8; i++) _fxCrate((Math.random() - 0.5) * (W * 1.4), -W + 2 + Math.random() * (W), y);
     let s = at(1); _fxShelf(s[0], s[1], y, p);
-  } else { // living / hall — a furnished home
+  } else { // living / hall — a furnished home with a kitchen nook
     _fxRug(0, -2, y, p); _fxTable(0, -2, y, p);
     _fxChair(-1.1, -2, y, p, Math.PI / 2); _fxChair(1.1, -2, y, p, -Math.PI / 2);
     let s = at(0); _fxShelf(s[0], s[1], y, p);
     s = at(1); if (p.fire) _fxHearth(s[0], s[1], y, p); else _fxConsole(s[0], s[1], y, p);
     s = at(2); _fxBed(s[0], s[1], y, p);
+    _fxStove(W - 1.2, -W + 2, y, p); _fxStool(W - 2.6, -W + 2, y, p);   // kitchen nook
+    _fxWardrobe(-W + 1, 4, y, p);
     _fxPlant(W - 1, -W + 1, y, p); _fxArt(0, -INNER + 0.4, y, p);
     if (p.glow) _fxLamp(W - 1, 2, y, p);
   }
+  // a little lived-in clutter, randomized so no two rooms are identical
+  const clutter = 2 + ((Math.random() * 3) | 0);
+  for (let i = 0; i < clutter; i++) {
+    const cx = (Math.random() - 0.5) * (W * 1.6), cz = -W + 2 + Math.random() * (W * 1.2);
+    if (Math.abs(cx) < 2.5 && Math.abs(cz + 2) < 2.5) continue; // keep the centre clear
+    const r = Math.random();
+    if (r < 0.4) _fxCrate(cx, cz, y);
+    else if (r < 0.65) _fxBarrel(cx, cz, y);
+    else if (r < 0.85) _fxStool(cx, cz, y, p);
+    else _fxPlant(cx, cz, y, p);
+  }
 }
 
-/* Generate a furnished interior spec for any building, by type + era. */
+/* Generate a furnished interior spec for any building, by type + era. The
+ * occasional resident is a distinct generated individual you can talk to. */
 function genInterior(type, era, seed) {
   const rnd = mulberry32((seed >>> 0) || 7);
   const env = ERA_ENV[era] || ERA_ENV.cyber;
+  const district = currentDistrictId || "broken_crown";
+  const faction = (window.People && People.districtFaction[district]) || "none";
+  const resident = (kind, chance) => (rnd() < (chance == null ? 0.5 : chance) && window.People)
+    ? [People.onePerson(seed + ":" + kind, kind, faction, district)] : [];
   const ST = (label, color, run) => ({ label, color, run });
   const rest = ST("Rest here", 0x6b5030, (g) => Actions.sleep(g));
   const search = ST("Search the room", 0x5a7a5a, (g) => Actions.search(g));
   const work = ST("Work at the desk", 0x4a6a8a, (g) => Actions.work(g));
   const shop = ST("Browse the wares", 0xc8a050, () => ({ panel: "market" }));
+  const eat = ST("Eat something", 0x9c6b3a, (g) => Actions.eat(g));
   let title, floors;
   if (type === "office") {
     title = era === "corporate" ? "Corporate Office" : "Office";
-    floors = [{ name: "Office Floor", room: "office", stations: [work, search] }];
-    if (rnd() > 0.45) floors.push({ name: "Upper Office", room: "office", stations: [work] });
+    floors = [{ name: "Office Floor", room: "office", stations: [work, search], npcs: resident("scribe", 0.6) }];
+    if (rnd() > 0.45) floors.push({ name: "Upper Office", room: "office", stations: [work], npcs: resident("scribe", 0.4) });
   } else if (type === "shop") {
     title = "Shopfront";
-    floors = [{ name: "Shop Floor", room: "shop", stations: [shop, search] }];
-    if (rnd() > 0.7) floors.push({ name: "Storeroom", room: "storeroom", stations: [search] });
+    floors = [{ name: "Shop Floor", room: "shop", stations: [shop, search], npcs: resident("merchant", 0.7) }];
+    if (rnd() > 0.6) floors.push({ name: "Storeroom", room: "storeroom", stations: [search] });
   } else {
     title = type === "tenement" ? "Tenement" : "Residence";
-    floors = [{ name: "Living Quarters", room: "living", stations: [rest, search] }];
-    if (rnd() > 0.5) floors.push({ name: "Bedroom", room: "bedroom", stations: [rest, search] });
+    const homeKind = era === "ancient" ? "devotee" : era === "cyber" ? "augmented" : "laborer";
+    floors = [{ name: "Living Quarters", room: "living", stations: [rest, eat, search], npcs: resident(homeKind, 0.45) }];
+    if (rnd() > 0.5) floors.push({ name: "Bedroom", room: "bedroom", stations: [rest, search], npcs: resident(homeKind, 0.3) });
   }
   return Object.assign({ title, floors, era }, env);
 }
@@ -1362,6 +1402,13 @@ function placeGate(s, x, z, angle, theme, locked) {
   s.pos = new THREE.Vector3(x, 1, z); s.radius = ACTIVATE + 1; s.mesh = null;
   interactables.push(s);
 }
+
+/* Civilizational era of each district — used to theme generated interiors. */
+const DISTRICT_ERA = {
+  ziggurat_crown: "ancient", hanging_market: "market", god_quarter: "ancient",
+  ironwall: "medieval", broken_crown: "market", neon_labyrinth: "cyber",
+  spire: "corporate", sub_strata: "medieval",
+};
 
 /* Detail texture used for each district's buildings. */
 const BUILD_TEX = {

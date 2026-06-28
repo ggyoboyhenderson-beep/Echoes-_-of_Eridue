@@ -334,6 +334,20 @@ People.ambientFor = function (district) {
   return list;
 };
 
+/* One fully-formed person from a seed string — for residents found inside
+ * generated building interiors. Each is a distinct, reproducible individual. */
+People.onePerson = function (seedStr, kind, faction, district) {
+  const rnd = mulberry32(hash("one:" + seedStr));
+  const origin = rnd() < 0.5 ? "city" : People._regionKeys[(rnd() * People._regionKeys.length) | 0];
+  const reg = AXIOM.REGIONS[origin];
+  const name = reg && origin !== "city" && rnd() > 0.4
+    ? reg.names[(rnd() * reg.names.length) | 0] : People.nameFor(rnd, district);
+  return { id: "res_" + seedStr, name, role: People.pool(kind).role || "resident",
+    kind, faction: faction || "none", district, ambient: true, hub: 0.14,
+    origin, originName: reg ? reg.name : "Ur-Axiom",
+    personality: People.genPersonality(rnd), appear: People.appearance(rnd, faction, kind, origin) };
+};
+
 /* Appearance for a named principal (stable per id). */
 People.namedAppearance = function (def) {
   const rnd = mulberry32(hash("named:" + def.id));
