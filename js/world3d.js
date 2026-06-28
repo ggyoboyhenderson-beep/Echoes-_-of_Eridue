@@ -287,6 +287,7 @@ World.buildDistrict = function (id, spawnCenter) {
 
   scene.background = new THREE.Color(theme.sky);
   scene.fog = new THREE.Fog(theme.sky, theme.fogNear, theme.fogFar);
+  scene.environment = Art ? Art.envMap(theme.sky, theme.ground, theme.texAccent) : null;
   scene.add(new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, theme.hemiInt));
   const sun = new THREE.DirectionalLight(theme.sun, theme.sunInt);
   sun.position.set(28, 46, 18);
@@ -702,6 +703,7 @@ World.enterBuilding = function (spec) {
   const sky = spec.sky != null ? spec.sky : 0x14110d;
   scene.background = new THREE.Color(sky);
   scene.fog = new THREE.Fog(sky, 14, 46);
+  scene.environment = Art ? Art.envMap(sky, spec.floorColor || 0x3a332a) : null;
   scene.add(new THREE.HemisphereLight(spec.hemi || 0x6a6660, 0x100d0a, 0.55));
   const sun = new THREE.DirectionalLight(0xfff0d8, 0.25); sun.position.set(8, 20, 6); scene.add(sun);
 

@@ -301,6 +301,38 @@ Art.windowTex = function (litColor, night, seed) {
   Art._winCache[key] = t; return t;
 };
 
+/* A cheap cube environment map (6 gradient faces) for image-based reflections
+ * on metal, marble, and glass. Top = sky, bottom = ground, sides between. */
+Art._envCache = {};
+Art.envMap = function (skyHex, groundHex, accentHex) {
+  const key = `${skyHex}|${groundHex}|${accentHex || 0}`;
+  if (Art._envCache[key]) return Art._envCache[key];
+  const S = 64;
+  const face = (top, bot, glow) => {
+    const c = document.createElement("canvas"); c.width = c.height = S; const x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 0, S);
+    g.addColorStop(0, _css(top)); g.addColorStop(1, _css(bot));
+    x.fillStyle = g; x.fillRect(0, 0, S, S);
+    if (glow && accentHex) { const rg = x.createRadialGradient(S / 2, S * 0.4, 2, S / 2, S * 0.4, S * 0.6);
+      rg.addColorStop(0, _css(accentHex, 0.5)); rg.addColorStop(1, _css(accentHex, 0)); x.fillStyle = rg; x.fillRect(0, 0, S, S); }
+    return c;
+  };
+  const mid = _shadeMix(skyHex, groundHex);
+  const faces = [
+    face(mid, groundHex, true), face(mid, groundHex, true),   // +x -x
+    face(skyHex, mid), face(groundHex, groundHex),            // +y(top) -y(bottom)
+    face(mid, groundHex, true), face(mid, groundHex, true),   // +z -z
+  ];
+  const tex = new THREE.CubeTexture(faces);
+  tex.needsUpdate = true;
+  Art._envCache[key] = tex;
+  return tex;
+};
+function _shadeMix(a, b) {
+  const [ar, ag, ab] = _rgb(a), [br, bg, bb] = _rgb(b);
+  return ((((ar + br) >> 1) << 16) | (((ag + bg) >> 1) << 8) | ((ab + bb) >> 1));
+}
+
 /* The title glyph: a stepped ancient base rising into a thin modern spire. */
 Art.logo = function () {
   return `<svg viewBox="0 0 120 90" fill="none" xmlns="http://www.w3.org/2000/svg">
