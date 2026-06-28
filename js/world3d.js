@@ -20,6 +20,7 @@ window.World3D = World;
 let renderer, scene, camera, clock;
 let composer, ssaoPass, bloomPass, fxaaPass, ppOn = true;
 let yaw = 0, pitch = 0;
+let dragging = false, dragX = 0, dragY = 0; // cursor-free drag-to-look
 const keys = {};
 const player = { pos: new THREE.Vector3(0, 1.7, 18), vel: new THREE.Vector3() };
 let interactables = [];   // {pos, radius, label, type, run}
@@ -79,6 +80,7 @@ World.init = function () {
   // input
   addEventListener("keydown", (e) => {
     keys[e.code] = true;
+    if (e.code.startsWith("Arrow")) e.preventDefault(); // arrow keys = look, don't scroll
     if (e.code === "KeyE") { if (dialogOpen()) closeDialog(); else World.interact(); }
     if (e.code === "Tab") { e.preventDefault(); if (!dialogOpen()) World.togglePanels(); }
     if (e.code === "KeyP") { ppOn = !ppOn; toast(`Cinematic rendering ${ppOn ? "on" : "off"}.`, ""); }
@@ -86,7 +88,26 @@ World.init = function () {
   });
   addEventListener("keyup", (e) => { keys[e.code] = false; });
 
-  canvas.addEventListener("click", () => { if (window.GameAudio) GameAudio.ensure(); if (!panelsOpen() && !dialogOpen()) canvas.requestPointerLock(); });
+  // Cursor-free look: click-and-drag (mouse or touch) turns the camera, no
+  // pointer-lock — so the game runs anywhere, including embeds and mobile.
+  const lookActive = () => started && !panelsOpen() && !dialogOpen();
+  canvas.addEventListener("pointerdown", (e) => {
+    if (window.GameAudio) GameAudio.ensure();
+    if (!lookActive()) return;
+    dragging = true; dragX = e.clientX; dragY = e.clientY;
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    canvas.classList.add("grabbing");
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!dragging || !lookActive()) return;
+    yaw -= (e.clientX - dragX) * 0.0042;
+    pitch = Math.max(-1.2, Math.min(1.2, pitch - (e.clientY - dragY) * 0.0042));
+    dragX = e.clientX; dragY = e.clientY;
+  });
+  const endDrag = () => { dragging = false; canvas.classList.remove("grabbing"); };
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("pointerleave", endDrag);
 
   // dialogue buttons
   document.getElementById("dlg-friendly").onclick = () => chooseDialog("Friendly");
@@ -94,13 +115,6 @@ World.init = function () {
   document.getElementById("dlg-trade").onclick = () => chooseDialog("Trade");
   document.getElementById("dlg-rob").onclick = () => chooseRob();
   document.getElementById("dlg-leave").onclick = () => closeDialog();
-  document.addEventListener("pointerlockmove", () => {});
-  document.addEventListener("mousemove", (e) => {
-    if (document.pointerLockElement === canvas) {
-      yaw -= e.movementX * 0.0022;
-      pitch = Math.max(-1.2, Math.min(1.2, pitch - e.movementY * 0.0022));
-    }
-  });
 
   // panel wiring
   document.querySelectorAll("#panels .panel-tabs button[data-t]").forEach((b) =>
@@ -1511,6 +1525,7 @@ World._gotoLandmark = (n) => {
   return focus ? focus.label : null;
 };
 World._focusLabel = () => focus ? focus.label : null;
+World._dbgYaw = () => yaw;
 World._vehicles = () => vehicles.map((v) => [v.grp.position.x.toFixed(1), v.grp.position.z.toFixed(1), v.kind || (v.drone ? "drone" : "?")]);
 World._cityCars = () => cityTrafficData.length;
 World._enterables = () => interactables.filter((i) => i.type === "enter").map((i) => i.label);
@@ -1959,7 +1974,7 @@ const THEMES = {
 /* main loop                                                                */
 function loop() {
   const dt = Math.min(clock.getDelta(), 0.05);
-  if (started && !panelsOpen() && !dialogOpen()) updateMovement(dt);
+  if (started && !panelsOpen() && !dialogOpen()) { updateLook(dt); updateMovement(dt); }
   if (started) updateAgents(dt);
   if (started && !inInterior) { updateVehicles(dt); updateGroundTraffic(dt); }
 
@@ -1976,6 +1991,15 @@ function loop() {
   if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) document.getElementById("toast").textContent = ""; }
 
   if (ppOn && composer) composer.render(); else renderer.render(scene, camera);
+}
+
+// Keyboard look — arrow keys turn the view, so no mouse is needed at all.
+function updateLook(dt) {
+  const turn = 1.9 * dt, look = 1.5 * dt;
+  if (keys.ArrowLeft)  yaw += turn;
+  if (keys.ArrowRight) yaw -= turn;
+  if (keys.ArrowUp)    pitch = Math.min(1.2, pitch + look);
+  if (keys.ArrowDown)  pitch = Math.max(-1.2, pitch - look);
 }
 
 function updateMovement(dt) {

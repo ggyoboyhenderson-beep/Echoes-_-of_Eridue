@@ -176,7 +176,8 @@ body.era-neon .logo, .era-neon #location h2 { color: var(--neon); }
  * 3D FRONT-END — full-viewport canvas with a HUD overlay
  * ========================================================================== */
 #screen-game { position: fixed; inset: 0; z-index: 5; }
-#scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: crosshair; }
+#scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: grab; touch-action: none; }
+#scene.grabbing { cursor: grabbing; }
 
 #hud3d { position: fixed; inset: 0; pointer-events: none; z-index: 6; font-family: "Iowan Old Style", Georgia, serif; }
 #hud3d .chip { background: rgba(0,0,0,.5); }

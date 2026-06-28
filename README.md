@@ -38,11 +38,17 @@ Works in any modern WebGL browser. Pick a protagonist, then:
 
 | Input | Action |
 | --- | --- |
-| **Click** | Lock the mouse and look around |
+| **Drag** (mouse or touch) | Look around — click-and-drag the view, no cursor capture |
+| **← ↑ ↓ →** | Look around with the keyboard (no mouse needed) |
 | **W A S D** | Walk through the district |
 | **E** | Interact with the station/gate you're standing at |
-| **Tab** | Open/close the panels (Skills · Market · Pack · Lore · Record · Menu) |
-| **Esc** | Release the cursor |
+| **Tab** | Open/close the panels (Skills · Market · Pack · Lore · Story · Record · Menu) |
+| **M** / **P** | Toggle sound / cinematic rendering |
+
+The view is **never pointer-locked**, so AXIOM runs unmodified inside an `<iframe>`
+embed or on a touch screen — drag to look, just like a map. That makes it
+publishable on any static host (GitHub Pages, itch.io, Netlify): upload the
+folder, no build and no server required.
 
 Walk up to a **gate** to travel to an adjacent district, an **NPC** to talk, the
 **Market** stall to trade, **Rest** to sleep, the **Food Vendor** to eat, and so
