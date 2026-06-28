@@ -260,6 +260,25 @@ Actions.omen = function (g) {
   return Actions._do(g, 1, `You sit with the temple readers. ${text} Dismiss it as superstition at your own expense.`, "omen");
 };
 
+/* ---- SEARCH a room inside a building ------------------------------------- */
+Actions.search = function (g) {
+  Engine.advance(g, 1);
+  const r = Math.random();
+  if (r < 0.22) {
+    const coins = 3 + Engine.rand(15); g.money += coins;
+    const msg = `You search the room and turn up ${coins} shekels someone left behind.`;
+    Engine.push(g, msg, "explore"); return { msg, kind: "explore" };
+  }
+  if (r < 0.42) {
+    const loot = Engine.pick(["bread", "water", "parts", "cloth", "stim"]);
+    g.inventory[loot] = (g.inventory[loot] || 0) + 1;
+    const msg = `You search the room and find ${AXIOM.GOODS[loot].name}.`;
+    Engine.push(g, msg, "explore"); return { msg, kind: "explore" };
+  }
+  const msg = "You search the room but find nothing worth taking.";
+  Engine.push(g, msg, "explore"); return { msg, kind: "explore" };
+};
+
 /* ---- PRAY at a temple landmark (Grand Ziggurat / sanctum) ---------------- */
 Actions.pray = function (g) {
   Engine.advance(g, 2);

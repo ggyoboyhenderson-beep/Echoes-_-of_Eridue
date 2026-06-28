@@ -920,6 +920,141 @@ function namedMeta(id, district) {
 
 /* Interior blueprints. Every room states why it exists and gives you something
  * to do that belongs there — the floor IS the reason. */
+/* ======================================================================== */
+/* PROCEDURAL INTERIORS — so EVERY building is enterable and furnished.       */
+const ERA_PAL = {
+  ancient:   { wood: 0x7a5a30, cloth: 0xb8a070, accent: 0xc89a55, metal: 0x6a5236, screen: 0xc89a55, glow: false, fire: true },
+  medieval:  { wood: 0x3a2a1a, cloth: 0x6a5236, accent: 0x8a6a3a, metal: 0x44423e, screen: 0xff7a30, glow: false, fire: true },
+  market:    { wood: 0x6a5030, cloth: 0x9a4a2a, accent: 0xb0962b, metal: 0x7a6a3a, screen: 0xc8a050, glow: false, fire: true },
+  cyber:     { wood: 0x2a2a34, cloth: 0x3a3a4a, accent: 0xff5c7a, metal: 0x22222a, screen: 0x38d0c8, glow: true, fire: false },
+  corporate: { wood: 0xc8d0da, cloth: 0x9aaaba, accent: 0x88c0ff, metal: 0xdfe4ea, screen: 0xbfe2ff, glow: true, fire: false },
+};
+const ERA_ENV = {
+  ancient:   { floorTex: "brick", floorColor: 0x8a6e4a, wallTex: "brick", wallColor: 0x6a5238, sky: 0x1a130c, hemi: 0x7a6648 },
+  medieval:  { floorTex: "concrete", floorColor: 0x44423e, wallTex: "concrete", wallColor: 0x33312e, sky: 0x141414, hemi: 0x8a8680 },
+  market:    { floorTex: "plank", floorColor: 0x6a5030, wallTex: "brick", wallColor: 0x6a5838, sky: 0x1c160e, hemi: 0x8a7450 },
+  cyber:     { floorTex: "panel", floorColor: 0x1c1c26, wallTex: "panel", wallColor: 0x16161f, sky: 0x06060c, hemi: 0x303048 },
+  corporate: { floorTex: "marble", floorColor: 0xdfe4ea, wallTex: "marble", wallColor: 0xc8ccd2, sky: 0x9ab0c8, hemi: 0xdfe8f0 },
+};
+
+/* ---- furniture pieces (decoration) ---- */
+function _fxBed(x, z, y, p) {
+  box(1.2, 0.3, 2.2, p.wood, x, y + 0.15, z, { tex: null, rough: 0.9 });
+  box(1.1, 0.2, 2.0, p.cloth, x, y + 0.4, z, { tex: null, rough: 0.95 });
+  box(1.0, 0.16, 0.4, shadeHex(p.cloth, 1.3), x, y + 0.52, z - 0.8, { tex: null });
+}
+function _fxTable(x, z, y, p) {
+  box(1.4, 0.1, 0.9, p.wood, x, y + 0.75, z, { tex: null, rough: 0.8 });
+  box(0.3, 0.7, 0.3, shadeHex(p.wood, 0.8), x, y + 0.38, z, { tex: null });
+}
+function _fxChair(x, z, y, p, rot) {
+  const s = box(0.42, 0.1, 0.42, p.wood, x, y + 0.45, z, { tex: null });
+  const b = box(0.42, 0.5, 0.08, p.wood, x, y + 0.7, z - 0.17, { tex: null });
+  s.rotation.y = rot || 0; b.rotation.y = rot || 0;
+}
+function _fxShelf(x, z, y, p) {
+  box(1.4, 2.0, 0.3, shadeHex(p.wood, 0.85), x, y + 1.0, z, { tex: null, rough: 0.9 });
+  const bk = [0x9a3a3a, 0x3a6a8a, 0x8a8a4a, 0x4a7a5a, 0xa06a3a];
+  for (let r = 0; r < 3; r++) for (let i = 0; i < 5; i++)
+    box(0.16, 0.34, 0.18, bk[(Math.random() * bk.length) | 0], x - 0.55 + i * 0.27, y + 0.55 + r * 0.55, z + 0.02, { tex: null });
+}
+function _fxRug(x, z, y, p) { box(2.6, 0.03, 1.9, p.accent, x, y + 0.03, z, { tex: null, rough: 1 }); }
+function _fxConsole(x, z, y, p) {
+  box(1.5, 0.8, 0.7, p.metal, x, y + 0.4, z, { tex: "panel", metal: 0.4 });
+  box(1.0, 0.6, 0.06, p.screen, x, y + 1.1, z + 0.3, { emissive: p.screen, ei: p.glow ? 1.2 : 0.5, tex: null });
+}
+function _fxHearth(x, z, y, p) {
+  box(1.4, 1.2, 0.5, p.metal, x, y + 0.6, z, { tex: "stone" });
+  box(0.8, 0.4, 0.3, 0xff7a25, x, y + 0.3, z + 0.15, { emissive: 0xff6a10, ei: 1.4, tex: null });
+  light(0xff7a30, 4, x, y + 0.6, z + 0.4, 8);
+}
+function _fxPlant(x, z, y, p) {
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.3, 8), new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.9 }));
+  pot.position.set(x, y + 0.15, z); scene.add(pot);
+  const f = ball(new THREE.MeshStandardMaterial({ color: 0x2a6a3a, roughness: 0.9 }), 0.28); f.position.set(x, y + 0.5, z); scene.add(f);
+}
+function _fxArt(x, z, y, p, faceZ) { box(0.9, 0.7, 0.05, p.accent, x, y + 2.4, z, { tex: "cloth" }); }
+function _fxCrate(x, z, y) { box(0.7, 0.7, 0.7, 0x6a5236, x, y + 0.35, z, { tex: "plank" }); }
+function _fxLamp(x, z, y, p) { box(0.16, 0.16, 0.16, p.screen, x, y + 1.6, z, { emissive: p.screen, ei: 1.2, tex: null }); light(p.screen, 3, x, y + 1.6, z, 8); }
+
+/* Furnish a room by its function. Anchors hug the walls so the floor stays
+ * walkable; the station ring (r~7.5) and the door (+z) are kept clear. */
+function furnishRoom(room, y, era, floorDef) {
+  const p = ERA_PAL[era] || ERA_PAL.cyber;
+  const W = INNER - 2;                                   // wall anchor distance
+  // a few wall slots away from the entrance side (+z)
+  const A = [[-W, -W + 3], [W, -W + 3], [-W, 2], [W, 2], [0, -W]];
+  const at = (i) => A[i % A.length];
+  if (room === "office") {
+    let s = at(0); _fxConsole(s[0], s[1], y, p);
+    s = at(2); _fxConsole(s[0], s[1], y, p);
+    s = at(1); _fxShelf(s[0], s[1], y, p);
+    _fxChair(-W + 1, -W + 3.6, y, p, Math.PI); _fxChair(W - 1, -W + 3.6, y, p, Math.PI);
+    _fxRug(0, -2, y, p); _fxPlant(W - 1, -W + 1, y, p);
+    s = at(4); _fxArt(s[0], -INNER + 0.4, y, p);
+    _fxLamp(0, -3, y, p);
+  } else if (room === "shop") {
+    box(5, 1.0, 1.0, p.wood, 0, y + 0.5, -2, { tex: "plank" });           // counter
+    for (let i = 0; i < 4; i++) box(0.32, 0.32, 0.32, [0xb0452b, 0x2b7ab0, 0x2bb06a, 0xb0962b][i], -1.5 + i, y + 1.15, -2, { tex: null });
+    let s = at(0); _fxShelf(s[0], s[1], y, p); s = at(1); _fxShelf(s[0], s[1], y, p);
+    _fxCrate(-W + 1, 3, y); _fxCrate(W - 1, 3, y);
+    _fxArt(0, -INNER + 0.4, y, p); if (p.glow) _fxLamp(0, -2, y, p);
+  } else if (room === "bedroom") {
+    _fxBed(-W + 1.5, -W + 3, y, p); _fxShelf(W, 0, y, p); _fxRug(-W + 2, 0, y, p);
+    _fxArt(0, -INNER + 0.4, y, p); _fxPlant(W - 1, -W + 1, y, p);
+    if (p.fire) _fxHearth(W, -W + 3, y, p); else _fxLamp(0, -3, y, p);
+  } else if (room === "storeroom") {
+    for (let i = 0; i < 8; i++) _fxCrate((Math.random() - 0.5) * (W * 1.4), -W + 2 + Math.random() * (W), y);
+    let s = at(1); _fxShelf(s[0], s[1], y, p);
+  } else { // living / hall — a furnished home
+    _fxRug(0, -2, y, p); _fxTable(0, -2, y, p);
+    _fxChair(-1.1, -2, y, p, Math.PI / 2); _fxChair(1.1, -2, y, p, -Math.PI / 2);
+    let s = at(0); _fxShelf(s[0], s[1], y, p);
+    s = at(1); if (p.fire) _fxHearth(s[0], s[1], y, p); else _fxConsole(s[0], s[1], y, p);
+    s = at(2); _fxBed(s[0], s[1], y, p);
+    _fxPlant(W - 1, -W + 1, y, p); _fxArt(0, -INNER + 0.4, y, p);
+    if (p.glow) _fxLamp(W - 1, 2, y, p);
+  }
+}
+
+/* Generate a furnished interior spec for any building, by type + era. */
+function genInterior(type, era, seed) {
+  const rnd = mulberry32((seed >>> 0) || 7);
+  const env = ERA_ENV[era] || ERA_ENV.cyber;
+  const ST = (label, color, run) => ({ label, color, run });
+  const rest = ST("Rest here", 0x6b5030, (g) => Actions.sleep(g));
+  const search = ST("Search the room", 0x5a7a5a, (g) => Actions.search(g));
+  const work = ST("Work at the desk", 0x4a6a8a, (g) => Actions.work(g));
+  const shop = ST("Browse the wares", 0xc8a050, () => ({ panel: "market" }));
+  let title, floors;
+  if (type === "office") {
+    title = era === "corporate" ? "Corporate Office" : "Office";
+    floors = [{ name: "Office Floor", room: "office", stations: [work, search] }];
+    if (rnd() > 0.45) floors.push({ name: "Upper Office", room: "office", stations: [work] });
+  } else if (type === "shop") {
+    title = "Shopfront";
+    floors = [{ name: "Shop Floor", room: "shop", stations: [shop, search] }];
+    if (rnd() > 0.7) floors.push({ name: "Storeroom", room: "storeroom", stations: [search] });
+  } else {
+    title = type === "tenement" ? "Tenement" : "Residence";
+    floors = [{ name: "Living Quarters", room: "living", stations: [rest, search] }];
+    if (rnd() > 0.5) floors.push({ name: "Bedroom", room: "bedroom", stations: [rest, search] });
+  }
+  return Object.assign({ title, floors, era }, env);
+}
+
+/* Make a placed building enterable: a door marker + an interaction zone. */
+function registerBuilding(x, z, w, label, type, era) {
+  const pal = ERA_PAL[era] || ERA_PAL.cyber;
+  const dc = pal.glow ? pal.screen : 0xffcf80;
+  box(1.0, 1.9, 0.14, dc, x, 0.95, z + w / 2 + 0.07, { emissive: dc, ei: pal.glow ? 0.9 : 0.4, tex: null });
+  interactables.push({
+    type: "enter", label: `Enter — ${label}`, pos: new THREE.Vector3(x, 1, z + w / 2 + 1),
+    radius: Math.max(3, w / 2 + 2), mesh: null,
+    run: () => { World.enterBuilding(genInterior(type, era, (x * 73 + z * 31) | 0)); return {}; },
+  });
+}
+
 function buildSpec(kind, district) {
   const g = State.data;
   const ST = (label, color, run, itype) => ({ label, color, run, itype });
@@ -1035,6 +1170,8 @@ World.enterBuilding = function (spec) {
       const r = 7.5;
       placeInteriorStation(s, Math.cos(ang) * r, Math.sin(ang) * r - 1, baseY, f);
     });
+    // furnish & decorate the room according to its type and era
+    furnishRoom(floorDef.room || "hall", baseY, spec.era || "cyber", floorDef);
     // resident NPCs on this floor
     (floorDef.npcs || []).forEach((meta, i) => {
       spawnInteriorNPC(meta, -8 + i * 5, -INNER + 4, baseY, f, 0);
@@ -1092,6 +1229,8 @@ World._gotoLandmark = (n) => {
 World._focusLabel = () => focus ? focus.label : null;
 World._vehicles = () => vehicles.map((v) => [v.grp.position.x.toFixed(1), v.grp.position.z.toFixed(1), v.kind || (v.drone ? "drone" : "?")]);
 World._cityCars = () => cityTrafficData.length;
+World._enterables = () => interactables.filter((i) => i.type === "enter").map((i) => i.label);
+World._enterFirst = () => { const e = interactables.filter((i) => i.type === "enter")[0]; if (e) { e.run(); return e.label; } return null; };
 World._goto = (type, n) => {
   const list = interactables.filter((i) => i.type === type && (i.floor === undefined || i.floor === currentFloor));
   const it = list[n || 0]; if (!it) return null;
@@ -1258,6 +1397,13 @@ const THEMES = {
         else crate(x, z, 0.7, "brick");
       }
       for (let i = 0; i < 4; i++) brazier((rnd() - 0.5) * 40, (rnd() - 0.5) * 40);
+      // ancient mudbrick dwellings clustered around the temple — enterable homes
+      for (let i = 0; i < 12; i++) {
+        const x = (rnd() - 0.5) * 46, z = (rnd() - 0.5) * 46; if (Math.hypot(x, z) < 16) continue;
+        const bw = 3 + rnd() * 2, bh = 3 + rnd() * 3;
+        box(bw, bh, bw, rnd() > 0.5 ? 0x9a7a52 : 0x8a6e4a, x, bh / 2, z, { rough: 1 });
+        registerBuilding(x, z, bw, rnd() > 0.7 ? "Scribe's House" : "Mudbrick Home", "home", "ancient");
+      }
     },
   },
   hanging_market: {
@@ -1276,6 +1422,7 @@ const THEMES = {
         if (Math.hypot(x, z) < 12) continue;
         const c = cols[(rnd() * cols.length) | 0];
         box(1.9, 1.0, 1.2, 0x6a513a, x, 0.5, z, { tex: "plank", rough: 0.9 });   // counter
+        if (rnd() > 0.45) registerBuilding(x, z, 1.9, "Market Shop", "shop", "market");
         box(2.3, 0.16, 1.7, c, x, 1.9, z, { tex: "cloth", rough: 0.85 });          // canopy
         box(0.1, 1.9, 0.1, 0x4a3a28, x - 1, 0.95, z - 0.7, { tex: null });          // posts
         box(0.1, 1.9, 0.1, 0x4a3a28, x + 1, 0.95, z + 0.7, { tex: null });
@@ -1341,6 +1488,7 @@ const THEMES = {
         if (Math.hypot(x, z) < 11) continue;
         const w = 4 + rnd() * 2.5, h = 8 + rnd() * 9;
         box(w, h, w, 0x35332f, x, h / 2, z, { rough: 1 });
+        registerBuilding(x, z, w, rnd() > 0.5 ? "Fortified Home" : "Family Barracks", rnd() > 0.5 ? "home" : "office", "medieval");
         for (let m = 0; m < 4; m++) box(w / 4, 0.7, 0.5, 0x2e2c29, x - w / 2 + 0.5 + m * (w / 4), h + 0.35, z + w / 2, { tex: "concrete" }); // merlons
         for (let s = 0; s < 3; s++) box(0.25, 0.9, 0.3, 0x140e08, x, 2 + s * 2.2, z + w / 2 + 0.01, { emissive: 0xff7a30, ei: night ? 0.8 : 0.2, tex: null }); // arrow-slits
       }
@@ -1380,6 +1528,7 @@ const THEMES = {
         if (rnd() > 0.55) { light(0xff8030, 2.6, x, 1.4, z, 7); box(0.4, 0.3, 0.4, 0xff7a25, x, 0.3, z, { emissive: 0xff6a10, ei: 1.4, tex: null }); }
         if (rnd() > 0.7) crate(x + 1.5, z, 0.6);
         if (rnd() > 0.8) barrel(x - 1.5, z);
+        if (rnd() > 0.35) registerBuilding(x, z, 2.6, rnd() > 0.7 ? "Salvaged Tenement" : "Home", rnd() > 0.7 ? "tenement" : "home", "market");
         if (topY > 2) tops.push([x, topY, z]);
       }
       // a communal cistern — the heart of the district's self-governance
@@ -1417,6 +1566,7 @@ const THEMES = {
         const w = 3.4 + rnd() * 2.4, h = 9 + rnd() * 21;
         const c = neon[(rnd() * neon.length) | 0];
         cityTower(rnd, x, z, w, h, 0x16161f, { neon: true, night: true, winColor: c, stripColor: c, metal: 0.35, rough: 0.5 });
+        registerBuilding(x, z, w, rnd() > 0.5 ? "Apartment Block" : "Office Tower", rnd() > 0.5 ? "home" : "office", "cyber");
         const sc = neon[(rnd() * neon.length) | 0];
         box(0.1, 1.6, 1.4, sc, x + w / 2 + 0.2, h * (0.4 + rnd() * 0.4), z, { emissive: sc, ei: 1.4, tex: null }); // holo sign
         if (rnd() > 0.6) light(c, 5, x, h * 0.5, z, 16);
@@ -1447,6 +1597,7 @@ const THEMES = {
         const a = (i / 12) * Math.PI * 2, r = 15 + rnd() * 7;
         const x = Math.cos(a) * r, z = Math.sin(a) * r, w = 4.5 + rnd() * 2.2, h = 24 + rnd() * 26;
         cityTower(rnd, x, z, w, h, 0xeaf0f6, { night, winColor: 0xbfe2ff, metal: 0.65, rough: 0.12 });
+        registerBuilding(x, z, w, "Corporate Office", "office", "corporate");
         box(0.3, 2, 0.3, 0xcfe0ee, x, h + 1, z, { emissive: 0x88c0ff, ei: night ? 1.2 : 0.4, tex: null }); // beacon
       }
       // central monument + reflecting plaza + planters
