@@ -87,14 +87,19 @@ World.init = function () {
     if (e.code === "KeyM" && window.GameAudio) toast(`Sound ${GameAudio.toggle() ? "on" : "off"}.`, "");
   });
   addEventListener("keyup", (e) => { keys[e.code] = false; });
+  // Never let a key get "stuck" when the tab/window loses focus mid-press.
+  const clearKeys = () => { for (const k in keys) keys[k] = false; dragging = false; canvas.classList.remove("grabbing"); };
+  addEventListener("blur", clearKeys);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) clearKeys(); });
 
   // Cursor-free look: click-and-drag (mouse or touch) turns the camera, no
   // pointer-lock — so the game runs anywhere, including embeds and mobile.
   const lookActive = () => started && !panelsOpen() && !dialogOpen();
+  let downX = 0, downY = 0, moved = 0;            // tap-vs-drag discrimination
   canvas.addEventListener("pointerdown", (e) => {
     if (window.GameAudio) GameAudio.ensure();
     if (!lookActive()) return;
-    dragging = true; dragX = e.clientX; dragY = e.clientY;
+    dragging = true; dragX = downX = e.clientX; dragY = downY = e.clientY; moved = 0;
     try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
     canvas.classList.add("grabbing");
   });
@@ -102,9 +107,13 @@ World.init = function () {
     if (!dragging || !lookActive()) return;
     yaw -= (e.clientX - dragX) * 0.0042;
     pitch = Math.max(-1.2, Math.min(1.2, pitch - (e.clientY - dragY) * 0.0042));
+    moved += Math.abs(e.clientX - dragX) + Math.abs(e.clientY - dragY);
     dragX = e.clientX; dragY = e.clientY;
   });
-  const endDrag = () => { dragging = false; canvas.classList.remove("grabbing"); };
+  const endDrag = (e) => {
+    if (dragging && moved < 6 && lookActive() && focus) World.interact(); // a clean tap = interact (mouse + touch)
+    dragging = false; canvas.classList.remove("grabbing");
+  };
   canvas.addEventListener("pointerup", endDrag);
   canvas.addEventListener("pointercancel", endDrag);
   canvas.addEventListener("pointerleave", endDrag);
@@ -281,10 +290,21 @@ function examine(title, text, kind) {
 /* TRAFFIC — motorcycles, cars, hovercars and drones to make the city move.  */
 let vehicles = [];
 
-function wheel(r, mat) {
+// A detailed wheel: a round torus tyre, a metal rim with crossed spokes and a
+// hub cap. Spinning the pivot around X turns the visible spokes.
+function wheel(r, tyreMat, rimMat) {
   const piv = new THREE.Object3D();
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, r * 0.5, 12), mat);
-  m.rotation.z = Math.PI / 2; piv.add(m);               // axle along X
+  const tyre = new THREE.Mesh(new THREE.TorusGeometry(r * 0.74, r * 0.30, 10, 20), tyreMat);
+  tyre.rotation.y = Math.PI / 2;                         // axle along X
+  piv.add(tyre);
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.52, r * 0.52, r * 0.5, 16), rimMat || tyreMat);
+  rim.rotation.z = Math.PI / 2; piv.add(rim);
+  for (let s = 0; s < 3; s++) {                          // spokes (make spin visible)
+    const sp = new THREE.Mesh(new THREE.BoxGeometry(r * 0.52, r * 0.9, r * 0.14), rimMat || tyreMat);
+    sp.rotation.x = (s / 3) * Math.PI; piv.add(sp);
+  }
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.2, r * 0.2, r * 0.56, 10), rimMat || tyreMat);
+  hub.rotation.z = Math.PI / 2; piv.add(hub);
   return piv;
 }
 
@@ -295,41 +315,72 @@ function makeVehicle(kind, color, night) {
     if (m) { const g = new THREE.Group(); m.position.y = m.userData.yOffset || 0; g.add(m); return { grp: g, wheels: [] }; }
   }
   const grp = new THREE.Group();
-  const body = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.6 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.6, metalness: 0.4 });
-  const tyre = new THREE.MeshStandardMaterial({ color: 0x0e0e12, roughness: 0.9 });
-  const glass = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.1, metalness: 0.8, emissive: 0x112233, emissiveIntensity: 0.3 });
-  const head = new THREE.MeshStandardMaterial({ color: 0xfff0c0, emissive: 0xfff0c0, emissiveIntensity: night ? 1.6 : 0.4 });
-  const tail = new THREE.MeshStandardMaterial({ color: 0xff3030, emissive: 0xff2020, emissiveIntensity: night ? 1.4 : 0.5 });
-  const mk = (w, h, d, mat, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); grp.add(m); return m; };
+  const body  = new THREE.MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.65, envMapIntensity: 1.1 });
+  const trim  = new THREE.MeshStandardMaterial({ color: shadeHex(color, 0.6), roughness: 0.4, metalness: 0.6 });
+  const dark  = new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.6, metalness: 0.4 });
+  const chrome = new THREE.MeshStandardMaterial({ color: 0xb9c0cc, roughness: 0.22, metalness: 0.95 });
+  const tyre  = new THREE.MeshStandardMaterial({ color: 0x0c0c10, roughness: 0.92 });
+  const rimM  = new THREE.MeshStandardMaterial({ color: 0xc4c9d2, roughness: 0.3, metalness: 0.9 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x1b2a3a, roughness: 0.08, metalness: 0.9, emissive: 0x0c1622, emissiveIntensity: 0.3 });
+  const head  = new THREE.MeshStandardMaterial({ color: 0xfff0c0, emissive: 0xfff0c0, emissiveIntensity: night ? 1.8 : 0.45 });
+  const tail  = new THREE.MeshStandardMaterial({ color: 0xff3030, emissive: 0xff2020, emissiveIntensity: night ? 1.5 : 0.5 });
+  const mk = (w, h, d, mat, x, y, z, rx) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); if (rx) m.rotation.x = rx; m.castShadow = true; grp.add(m); return m; };
   const wheels = [];
 
   if (kind === "moto") {
-    mk(0.34, 0.26, 1.3, body, 0, 0.55, 0);            // frame
-    mk(0.3, 0.22, 0.4, dark, 0, 0.72, -0.15);          // tank/seat
-    mk(0.18, 0.4, 0.18, dark, 0, 0.8, 0.55);           // forks/handlebars
-    const rider = new THREE.Group(); rider.position.set(0, 0.85, 0.05);
-    const rb = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x222028, roughness: 0.7 })); rb.position.y = 0.25; rb.rotation.x = 0.35; rider.add(rb);
-    const rh = new THREE.Mesh(GEO.sphere, new THREE.MeshStandardMaterial({ color: 0x1a1a22, roughness: 0.5 })); rh.scale.setScalar(0.12); rh.position.set(0, 0.55, -0.05); rider.add(rh);
+    mk(0.30, 0.30, 1.2, body, 0, 0.58, 0);              // tank/spine
+    mk(0.34, 0.20, 0.5, dark, 0, 0.74, -0.18);          // seat
+    mk(0.30, 0.16, 0.3, trim, 0, 0.60, 0.42);           // engine block
+    const fork = mk(0.12, 0.5, 0.12, chrome, 0, 0.74, 0.6, -0.35); // raked forks
+    mk(0.5, 0.07, 0.1, dark, 0, 0.92, 0.62);            // handlebars
+    mk(0.12, 0.1, 0.5, chrome, 0.16, 0.5, -0.55);       // exhaust pipe
+    const rider = new THREE.Group(); rider.position.set(0, 0.86, 0.0);
+    const rb = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.17, 0.52, 8), new THREE.MeshStandardMaterial({ color: 0x222028, roughness: 0.7 })); rb.position.y = 0.26; rb.rotation.x = 0.4; rider.add(rb);
+    const ra = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.5, 6), new THREE.MeshStandardMaterial({ color: 0x222028, roughness: 0.7 })); ra.position.set(0, 0.4, 0.28); ra.rotation.x = 1.1; rider.add(ra);
+    const rh = new THREE.Mesh(GEO.sphere, new THREE.MeshStandardMaterial({ color: 0x14141c, roughness: 0.35, metalness: 0.3 })); rh.scale.setScalar(0.13); rh.position.set(0, 0.6, -0.04); rider.add(rh);
     grp.add(rider);
-    const wf = wheel(0.3, tyre); wf.position.set(0, 0.3, 0.62); grp.add(wf); wheels.push(wf);
-    const wr = wheel(0.32, tyre); wr.position.set(0, 0.3, -0.6); grp.add(wr); wheels.push(wr);
-    mk(0.14, 0.14, 0.06, head, 0, 0.7, 0.78);          // headlight
-    mk(0.1, 0.08, 0.05, tail, 0, 0.62, -0.78);
+    const wf = wheel(0.32, tyre, rimM); wf.position.set(0, 0.32, 0.66); grp.add(wf); wheels.push(wf);
+    const wr = wheel(0.34, tyre, rimM); wr.position.set(0, 0.34, -0.62); grp.add(wr); wheels.push(wr);
+    mk(0.16, 0.16, 0.06, head, 0, 0.74, 0.84);          // headlight
+    mk(0.1, 0.08, 0.05, tail, 0, 0.64, -0.82);
   } else if (kind === "hover") {
-    mk(1.1, 0.34, 2.6, body, 0, 0.7, 0);
-    mk(0.9, 0.3, 1.3, glass, 0, 0.98, -0.05);
-    mk(1.0, 0.08, 2.4, new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.4 }), 0, 0.5, 0); // glow underside
-    mk(0.5, 0.1, 0.1, head, 0, 0.7, 1.32);
-    mk(0.5, 0.1, 0.1, tail, 0, 0.7, -1.32);
-  } else { // car
-    mk(1.5, 0.5, 3.2, body, 0, 0.55, 0);
-    mk(1.4, 0.45, 1.7, glass, 0, 0.95, -0.1);
-    mk(1.52, 0.18, 0.9, body, 0, 0.5, 1.1);
-    const wp = [[0.72, 1.05], [-0.72, 1.05], [0.72, -1.05], [-0.72, -1.05]];
-    for (const [wx, wz] of wp) { const w = wheel(0.34, tyre); w.position.set(wx, 0.32, wz); grp.add(w); wheels.push(w); }
-    mk(0.28, 0.16, 0.06, head, 0.45, 0.5, 1.62); mk(0.28, 0.16, 0.06, head, -0.45, 0.5, 1.62);
-    mk(0.24, 0.14, 0.06, tail, 0.5, 0.55, -1.62); mk(0.24, 0.14, 0.06, tail, -0.5, 0.55, -1.62);
+    mk(1.15, 0.26, 2.7, body, 0, 0.72, 0);              // hull
+    mk(1.0, 0.18, 2.3, trim, 0, 0.58, 0, 0);            // lower hull
+    mk(0.95, 0.34, 1.35, glass, 0, 0.98, -0.1);         // canopy
+    mk(0.7, 0.12, 0.5, body, 0, 1.16, -0.1);            // spine fin
+    mk(0.18, 0.5, 0.7, trim, 0.62, 0.95, -1.0, 0.3);    // rear fins
+    mk(0.18, 0.5, 0.7, trim, -0.62, 0.95, -1.0, 0.3);
+    const glow = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.5 });
+    mk(1.0, 0.07, 2.4, glow, 0, 0.5, 0);                // anti-grav glow underside
+    mk(0.3, 0.3, 0.12, glow, 0, 0.72, -1.4);            // thruster
+    mk(0.55, 0.1, 0.08, head, 0, 0.74, 1.38);
+    mk(0.55, 0.1, 0.08, tail, 0, 0.74, -1.42);
+  } else { // car — beveled multi-part body with arches, bumpers, mirrors, grille
+    mk(1.74, 0.30, 3.7, body, 0, 0.50, 0);              // lower body
+    mk(1.78, 0.22, 3.5, dark, 0, 0.34, 0);              // sill/underbody
+    mk(1.7, 0.30, 2.1, body, 0, 0.76, -0.1);            // shoulder line
+    mk(1.5, 0.16, 1.15, body, 0, 0.74, 1.25);           // hood
+    mk(1.5, 0.16, 0.95, body, 0, 0.74, -1.55);          // boot
+    // tapered greenhouse + glass
+    mk(1.42, 0.46, 1.55, trim, 0, 1.04, -0.1);          // roof pillars
+    mk(1.30, 0.42, 1.62, glass, 0, 1.04, -0.1);         // wrap glass
+    mk(1.22, 0.30, 0.06, glass, 0, 1.02, 0.72);         // windshield
+    // bumpers + grille + plate
+    mk(1.66, 0.24, 0.2, dark, 0, 0.44, 1.85);
+    mk(1.66, 0.24, 0.2, dark, 0, 0.44, -1.85);
+    mk(1.05, 0.16, 0.06, chrome, 0, 0.56, 1.9);         // grille
+    mk(0.34, 0.12, 0.04, chrome, 0, 0.4, 1.96);         // plate
+    // mirrors
+    mk(0.12, 0.1, 0.22, body, 0.82, 0.92, 0.66); mk(0.12, 0.1, 0.22, body, -0.82, 0.92, 0.66);
+    // wheel arches (dark fenders) over each wheel
+    const wp = [[0.82, 1.2], [-0.82, 1.2], [0.82, -1.2], [-0.82, -1.2]];
+    for (const [wx, wz] of wp) {
+      mk(0.16, 0.5, 0.92, dark, wx * 1.02, 0.6, wz);    // arch
+      const w = wheel(0.36, tyre, rimM); w.position.set(wx, 0.34, wz); grp.add(w); wheels.push(w);
+    }
+    // lights
+    mk(0.3, 0.16, 0.06, head, 0.5, 0.56, 1.9); mk(0.3, 0.16, 0.06, head, -0.5, 0.56, 1.9);
+    mk(0.28, 0.14, 0.06, tail, 0.52, 0.6, -1.9); mk(0.28, 0.14, 0.06, tail, -0.52, 0.6, -1.9);
   }
   return { grp, wheels };
 }
@@ -1526,6 +1577,9 @@ World._gotoLandmark = (n) => {
 };
 World._focusLabel = () => focus ? focus.label : null;
 World._dbgYaw = () => yaw;
+World._pos = () => [+player.pos.x.toFixed(2), +player.pos.z.toFixed(2)];
+World._keyDown = (c) => !!keys[c];
+World._tp = (x, z, y) => { player.pos.set(x, 1.7, z); if (y !== undefined) yaw = y; };
 World._vehicles = () => vehicles.map((v) => [v.grp.position.x.toFixed(1), v.grp.position.z.toFixed(1), v.kind || (v.drone ? "drone" : "?")]);
 World._cityCars = () => cityTrafficData.length;
 World._enterables = () => interactables.filter((i) => i.type === "enter").map((i) => i.label);
@@ -2028,7 +2082,7 @@ function updateFocus() {
   }
   focus = best;
   const prompt = document.getElementById("prompt");
-  if (focus) prompt.innerHTML = `<span class="key">E</span> ${focus.label}`;
+  if (focus) prompt.innerHTML = `<span class="key">E</span><span class="key">tap</span> ${focus.label}`;
   else prompt.textContent = "";
 
   // pulse focused mesh
