@@ -237,18 +237,42 @@ Art.detailNormal = function (kind, rw, rh) {
 };
 
 /* Materials for the 3D world, themed per district. */
+/* If a real CC0 PBR set is loaded for this kind, build a material from it
+ * (true albedo/normal/roughness/ao); otherwise fall back to procedural. */
+function _realMaterial(kind, rw, rh, ns) {
+  const A = window.Assets, set = A && A.set ? A.set(kind) : null;
+  if (!set || !set.map) return null;
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
+  m.map = A.repeatClone(set.map, rw, rh);
+  if (set.normalMap) { m.normalMap = A.repeatClone(set.normalMap, rw, rh); m.normalScale = new THREE.Vector2(ns, ns); }
+  if (set.roughnessMap) m.roughnessMap = A.repeatClone(set.roughnessMap, rw, rh);
+  if (set.aoMap) m.aoMap = A.repeatClone(set.aoMap, rw, rh);
+  return m;
+}
+
 Art.groundMaterial = function (theme) {
   const rep = theme.groundRepeat || 9;
+  const real = _realMaterial(theme.tex, rep, rep, 0.8);
+  if (real) return real;
   const t = Art.pattern(theme.tex, theme.ground, theme.texAccent || theme.wall, theme.seed);
   t.repeat.set(rep, rep);
   const n = Art.normalFromCanvas(t.image, 2.0); n.repeat.set(rep, rep);
   return new THREE.MeshStandardMaterial({ map: t, normalMap: n, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.95 });
 };
 Art.wallMaterial = function (theme) {
+  const real = _realMaterial(theme.wallTex || theme.tex, 6, 2, 0.9);
+  if (real) return real;
   const t = Art.pattern(theme.wallTex || theme.tex, theme.wall, theme.texAccent || theme.ground, (theme.seed || 1) + 7);
   t.repeat.set(6, 2);
   const n = Art.normalFromCanvas(t.image, 2.2); n.repeat.set(6, 2);
   return new THREE.MeshStandardMaterial({ map: t, normalMap: n, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 1 });
+};
+/* Expose whether a real set exists, so box() can whiten the tint. */
+Art.hasRealSet = function (kind) { const A = window.Assets; return !!(A && A.set && A.set(kind)); };
+Art.realDetail = function (kind, rw, rh) {
+  const A = window.Assets, set = A && A.set ? A.set(kind) : null;
+  if (!set || !set.map) return null;
+  return { map: A.repeatClone(set.map, rw, rh), normalMap: set.normalMap ? A.repeatClone(set.normalMap, rw, rh) : null };
 };
 
 /* ==========================================================================

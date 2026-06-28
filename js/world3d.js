@@ -66,6 +66,8 @@ World.init = function () {
   scene = new THREE.Scene();
 
   buildComposer();
+  // optional CC0 asset pipeline — upgrades lighting/textures/models if present
+  if (window.Assets && Assets.init) Assets.init(renderer, () => World.rebuildCurrent());
   resize();
   addEventListener("resize", resize);
 
@@ -161,9 +163,9 @@ function box(w, h, d, color, x, y, z, opts = {}) {
   if (kind && Art && !glowing) {
     const rw = Math.max(1, Math.round((w + d) / 3));
     const rh = Math.max(1, Math.round(h / 2.2));
-    matOpts.map = Art.detail(kind, rw, rh);
-    matOpts.normalMap = Art.detailNormal(kind, rw, rh);
-    matOpts.normalScale = new THREE.Vector2(0.8, 0.8);
+    const real = Art.realDetail ? Art.realDetail(kind, rw, rh) : null;
+    if (real) { matOpts.map = real.map; if (real.normalMap) { matOpts.normalMap = real.normalMap; matOpts.normalScale = new THREE.Vector2(0.8, 0.8); } matOpts.color = 0xffffff; }
+    else { matOpts.map = Art.detail(kind, rw, rh); matOpts.normalMap = Art.detailNormal(kind, rw, rh); matOpts.normalScale = new THREE.Vector2(0.8, 0.8); }
   }
   if (opts.emissiveMap) { matOpts.emissiveMap = opts.emissiveMap; if (!matOpts.emissive) matOpts.emissive = 0xffffff; }
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial(matOpts));
@@ -265,6 +267,11 @@ function wheel(r, mat) {
 }
 
 function makeVehicle(kind, color, night) {
+  // a loaded CC0 glTF model takes over if one is configured & present
+  if (window.Assets && Assets.model) {
+    const m = Assets.model(kind);
+    if (m) { const g = new THREE.Group(); m.position.y = m.userData.yOffset || 0; g.add(m); return { grp: g, wheels: [] }; }
+  }
   const grp = new THREE.Group();
   const body = new THREE.MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.6 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.6, metalness: 0.4 });
@@ -466,7 +473,7 @@ World.buildDistrict = function (id, spawnCenter) {
 
   scene.background = new THREE.Color(theme.sky);
   scene.fog = new THREE.Fog(theme.sky, theme.fogNear, theme.fogFar);
-  scene.environment = Art ? Art.envMap(theme.sky, theme.ground, theme.texAccent) : null;
+  scene.environment = (window.Assets && Assets.env) ? Assets.env : (Art ? Art.envMap(theme.sky, theme.ground, theme.texAccent) : null);
   scene.add(new THREE.HemisphereLight(theme.hemiSky, theme.hemiGround, theme.hemiInt));
   const sun = new THREE.DirectionalLight(theme.sun, theme.sunInt);
   sun.position.set(28, 46, 18);
@@ -883,7 +890,7 @@ World.enterBuilding = function (spec) {
   const sky = spec.sky != null ? spec.sky : 0x14110d;
   scene.background = new THREE.Color(sky);
   scene.fog = new THREE.Fog(sky, 14, 46);
-  scene.environment = Art ? Art.envMap(sky, spec.floorColor || 0x3a332a) : null;
+  scene.environment = (window.Assets && Assets.env) ? Assets.env : (Art ? Art.envMap(sky, spec.floorColor || 0x3a332a) : null);
   scene.add(new THREE.HemisphereLight(spec.hemi || 0x6a6660, 0x100d0a, 0.55));
   const sun = new THREE.DirectionalLight(0xfff0d8, 0.25); sun.position.set(8, 20, 6); scene.add(sun);
 
@@ -968,6 +975,13 @@ World.enterBuilding = function (spec) {
 World.exitBuilding = function () {
   inInterior = false; interiorSpec = null; currentFloor = 0; currentFloorY = 0;
   World.buildDistrict(returnDistrict, true);
+};
+
+/* Rebuild the scene in place (used when optional assets finish loading). */
+World.rebuildCurrent = function () {
+  if (!started) return;
+  if (inInterior && interiorSpec) World.enterBuilding(interiorSpec);
+  else if (State.data) World.buildDistrict(State.data.here, false);
 };
 
 /* test/debug hooks */

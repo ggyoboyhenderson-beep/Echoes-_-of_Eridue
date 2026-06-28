@@ -1,3 +1,10 @@
 node_modules/
 *.log
 .DS_Store
+
+# Optional CC0 asset drops (add locally; keep the guide + folder structure tracked)
+assets/hdri/*
+assets/textures/**/*
+assets/models/*
+!assets/**/.gitkeep
+!assets/README.md
