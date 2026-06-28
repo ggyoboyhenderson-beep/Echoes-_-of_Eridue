@@ -38,10 +38,11 @@ Assets.config = {
   textureFiles: { map: "albedo.jpg", normalMap: "normal.jpg", roughnessMap: "roughness.jpg", aoMap: "ao.jpg" },
   // glTF models to swap in for the procedural ones (scale/offset are guesses)
   models: {
-    moto:  { url: "assets/models/motorcycle.glb", scale: 1, y: 0 },
-    car:   { url: "assets/models/car.glb",        scale: 1, y: 0 },
-    hover: { url: "assets/models/hovercar.glb",   scale: 1, y: 0 },
-    drone: { url: "assets/models/drone.glb",      scale: 1, y: 0 },
+    moto:      { url: "assets/models/motorcycle.glb", scale: 1, y: 0 },
+    car:       { url: "assets/models/car.glb",        scale: 1, y: 0 },
+    hover:     { url: "assets/models/hovercar.glb",   scale: 1, y: 0 },
+    drone:     { url: "assets/models/drone.glb",      scale: 1, y: 0 },
+    character: { url: "assets/models/character.glb",  scale: 1, y: 0 },
   },
 };
 

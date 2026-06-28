@@ -363,6 +363,86 @@ function updateVehicles(dt) {
   }
 }
 
+/* ======================================================================== */
+/* MEGACITY — GPU-instanced surrounding city + dense traffic. One draw call
+ * renders hundreds of buildings or cars, so the world reads as a vast city.   */
+const _dummy = new THREE.Object3D();
+let cityTraffic = null, cityTrafficData = [];
+
+/* The city that stretches past the district walls in every direction:
+ * a near band of homes, then mid-rise offices, then a far skyline of towers. */
+function buildSurroundCity(theme, night) {
+  const modern = theme.tex === "neon" || theme.tex === "panel" || theme.tex === "marble";
+  const N = 360;
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const win = modern && Art ? Art.windowTex(theme.tex === "marble" ? 0xbfe2ff : 0x38d0c8, night, 4242) : null;
+  if (win) win.repeat.set(2, 4);
+  const mat = new THREE.MeshStandardMaterial({
+    roughness: modern ? 0.45 : 0.95, metalness: modern ? 0.4 : 0.05,
+    emissiveMap: win, emissive: win ? 0xffffff : 0x000000, emissiveIntensity: win ? (night ? 0.85 : 0.22) : 0,
+  });
+  const im = new THREE.InstancedMesh(geo, mat, N);
+  im.frustumCulled = false; im.castShadow = false; im.receiveShadow = false;
+  const c = new THREE.Color();
+  for (let i = 0; i < N; i++) {
+    const a = Math.random() * Math.PI * 2;
+    // distance ring controls scale: near = homes, mid = offices, far = towers
+    const t = Math.random();
+    const r = BOUND + 6 + t * 96;
+    const h = t < 0.33 ? 2 + Math.random() * 4 : t < 0.66 ? 6 + Math.random() * 12 : 14 + Math.random() * 40;
+    const w = (t < 0.33 ? 2.5 : 4) + Math.random() * (t < 0.33 ? 2 : 6);
+    _dummy.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r);
+    _dummy.rotation.set(0, Math.random() * Math.PI, 0);
+    _dummy.scale.set(w, h, w * (0.8 + Math.random() * 0.5));
+    _dummy.updateMatrix(); im.setMatrixAt(i, _dummy.matrix);
+    c.setHex(theme.wall).multiplyScalar(0.6 + Math.random() * 0.7);
+    im.setColorAt(i, c);
+  }
+  im.instanceColor.needsUpdate = true;
+  scene.add(im);
+}
+
+/* Hundreds of cars on a street grid, one InstancedMesh, per-instance colour. */
+function buildGroundTraffic(id, night) {
+  cityTraffic = null; cityTrafficData = [];
+  const n = { neon_labyrinth: 200, spire: 130, hanging_market: 170, ironwall: 130,
+    broken_crown: 170, ziggurat_crown: 50, god_quarter: 0, sub_strata: 0 }[id];
+  const count = n != null ? n : 90;
+  if (!count) return;
+  const geo = new THREE.BoxGeometry(1.5, 0.6, 3.0);
+  const mat = new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.45 });
+  const im = new THREE.InstancedMesh(geo, mat, count);
+  im.frustumCulled = false; im.castShadow = false;
+  const cols = [0x8a2a2a, 0x2a4a8a, 0x2a8a5a, 0xc8a030, 0x222228, 0x8a3a6a, 0xb0b4bc, 0x30384a, 0xc86a2a];
+  // a grid of one-way lanes
+  const lanes = [];
+  for (let k = -3; k <= 3; k++) { if (!k) continue; lanes.push({ axis: "x", fixed: k * 6.6, dir: k % 2 ? 1 : -1 }); lanes.push({ axis: "z", fixed: k * 6.6, dir: k % 2 ? -1 : 1 }); }
+  const c = new THREE.Color();
+  for (let i = 0; i < count; i++) {
+    const lane = lanes[i % lanes.length];
+    cityTrafficData.push({ axis: lane.axis, fixed: lane.fixed, dir: lane.dir,
+      p: (Math.random() - 0.5) * (BOUND * 2 - 4), speed: 4 + Math.random() * 6 });
+    c.setHex(cols[(Math.random() * cols.length) | 0]); im.setColorAt(i, c);
+  }
+  im.instanceColor.needsUpdate = true;
+  scene.add(im); cityTraffic = im;
+  updateGroundTraffic(0);
+}
+function updateGroundTraffic(dt) {
+  if (!cityTraffic) return;
+  const lim = BOUND - 1.2;
+  for (let i = 0; i < cityTrafficData.length; i++) {
+    const d = cityTrafficData[i];
+    d.p += d.dir * d.speed * dt;
+    if (d.p > lim) d.p = -lim; else if (d.p < -lim) d.p = lim;
+    if (d.axis === "x") { _dummy.position.set(d.p, 0.35, d.fixed); _dummy.rotation.set(0, d.dir > 0 ? Math.PI / 2 : -Math.PI / 2, 0); }
+    else { _dummy.position.set(d.fixed, 0.35, d.p); _dummy.rotation.set(0, d.dir > 0 ? 0 : Math.PI, 0); }
+    _dummy.scale.set(1, 1, 1); _dummy.updateMatrix();
+    cityTraffic.setMatrixAt(i, _dummy.matrix);
+  }
+  cityTraffic.instanceMatrix.needsUpdate = true;
+}
+
 /* A high-rise in one of several silhouettes, so skylines aren't all boxes. */
 function cityTower(rnd, x, z, w, h, color, opts) {
   opts = opts || {};
@@ -545,9 +625,12 @@ World.buildDistrict = function (id, spawnCenter) {
   });
   currentBuildKind = null;
 
-  // populate the district with people who live in it, and put the streets in motion
+  // populate the district with people, set the streets in motion, and surround
+  // it with the vast city that stretches to the horizon in every direction
   spawnPeople(g, id, rnd);
   spawnTraffic(id, Engine.isNight(g));
+  if (id !== "sub_strata") buildSurroundCity(theme, Engine.isNight(g));
+  buildGroundTraffic(id, Engine.isNight(g));
 
   // spawn
   if (spawnCenter) { player.pos.set(0, 1.7, 16); yaw = Math.PI; pitch = 0; }
@@ -596,6 +679,18 @@ function ball(mat, r) { const m = meshOf(GEO.sphere, mat, false); m.scale.setSca
 function ballE(mat, rx, ry, rz) { const m = meshOf(GEO.sphere, mat, false); m.scale.set(rx, ry, rz); return m; }
 
 function makeHuman(ap) {
+  // a loaded CC0 character model takes over if one is present (tinted by dress)
+  if (window.Assets && Assets.model) {
+    const m = Assets.model("character");
+    if (m) {
+      const grp = new THREE.Group(); m.position.y = m.userData.yOffset || 0; grp.add(m);
+      m.traverse((o) => { if (o.isMesh && o.material) { o.material = o.material.clone(); if (o.material.color) o.material.color.setHex(ap.cloth); } });
+      let s = 1; if (ap.build === "tall") s = 1.12; if (ap.build === "short") s = 0.86;
+      grp.scale.setScalar(s); grp.add(contactShadow());
+      const dummy = () => new THREE.Object3D();
+      return { grp, parts: { llegPivot: dummy(), rlegPivot: dummy(), larmPivot: dummy(), rarmPivot: dummy(), lknee: dummy(), rknee: dummy(), lelbow: dummy(), relbow: dummy(), head: dummy() } };
+    }
+  }
   const grp = new THREE.Group();
   const weave = Art ? Art.detail("cloth", 2, 3) : null;
   const skin = new THREE.MeshStandardMaterial({ color: ap.skin, roughness: 0.7 });
@@ -885,7 +980,7 @@ World.enterBuilding = function (spec) {
   inInterior = true; interiorSpec = spec; returnDistrict = State.data.here;
   currentFloor = 0; currentFloorY = 0;
   while (scene.children.length) scene.remove(scene.children[0]);
-  interactables = []; agents = []; vehicles = []; labelSprites = []; floorLabels = []; focus = null;
+  interactables = []; agents = []; vehicles = []; cityTraffic = null; cityTrafficData = []; labelSprites = []; floorLabels = []; focus = null;
 
   const sky = spec.sky != null ? spec.sky : 0x14110d;
   scene.background = new THREE.Color(sky);
@@ -996,6 +1091,7 @@ World._gotoLandmark = (n) => {
 };
 World._focusLabel = () => focus ? focus.label : null;
 World._vehicles = () => vehicles.map((v) => [v.grp.position.x.toFixed(1), v.grp.position.z.toFixed(1), v.kind || (v.drone ? "drone" : "?")]);
+World._cityCars = () => cityTrafficData.length;
 World._goto = (type, n) => {
   const list = interactables.filter((i) => i.type === type && (i.floor === undefined || i.floor === currentFloor));
   const it = list[n || 0]; if (!it) return null;
@@ -1418,7 +1514,7 @@ function loop() {
   const dt = Math.min(clock.getDelta(), 0.05);
   if (started && !panelsOpen() && !dialogOpen()) updateMovement(dt);
   if (started) updateAgents(dt);
-  if (started && !inInterior) updateVehicles(dt);
+  if (started && !inInterior) { updateVehicles(dt); updateGroundTraffic(dt); }
 
   // camera orientation
   camera.position.copy(player.pos);
