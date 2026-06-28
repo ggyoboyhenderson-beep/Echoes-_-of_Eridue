@@ -2026,6 +2026,8 @@ World.interact = function () {
     World.buildDistrict(g.here, true);
   }
   World.updateHUD();
+  if (typeof Story !== "undefined" && Story.check) Story.check(g);
+  if (g.over) UI.gameOver(g);
   if (res && res.revealed) revelationModal();
   if (g.over) UI.gameOver(g);
 };
@@ -2152,6 +2154,36 @@ World.showPanel = function (tab) {
     if (g.flags.revealed) body.appendChild(el("p", "reveal", AXIOM.REVELATION));
   }
 
+  if (tab === "story") {
+    // who you've become — profile, underworld standing, and your choices so far
+    const proto = AXIOM.PROTAGONISTS.find((p) => p.id === g.proto);
+    body.appendChild(el("p", "muted small", `${g.name} — ${g.role}. “${proto ? proto.crisis : ""}”`));
+    const d = (window.Engine && Engine.dominantStyle) ? Engine.dominantStyle(g) : "none";
+    body.appendChild(el("div", "prow", `<span class="pn">You play as</span><span class="pv" style="color:var(--cedar)">${d}</span>`));
+    if (window.Engine && Engine.underworldRank) {
+      const r = Engine.underworldRank(g);
+      body.appendChild(el("div", "prow", `<span class="pn">Underworld</span><span class="pv">${Engine.RANKS[r]} · standing ${Engine.underworldStanding(g)}${(g.heat || 0) > 0 ? ` · 🔥${Math.round(g.heat)}` : ""}</span>`));
+    }
+    // style bars
+    const st = g.style || {};
+    for (const k of Object.keys(st)) {
+      const v = Math.min(100, (st[k] || 0) * 4);
+      body.appendChild(el("div", "prow", `<span class="pn">${k}</span><span class="pbar"><span style="width:${v}%"></span></span>`));
+    }
+    // faction standings
+    if (g.factionRep) for (const f of Object.keys(g.factionRep)) {
+      if (!g.factionRep[f]) continue;
+      const c = g.factionRep[f] > 0 ? "var(--good)" : "var(--bad)";
+      body.appendChild(el("div", "prow", `<span class="pn">${(AXIOM.FACTIONS && AXIOM.FACTIONS[f]) || f}</span><span class="pv" style="color:${c}">${g.factionRep[f]}</span>`));
+    }
+    // the decisions you've made
+    body.appendChild(el("p", "muted small", "Your story so far —"));
+    const slog = (g.story && g.story.log) || [];
+    if (!slog.length) body.appendChild(el("p", "muted", "Your story is still unwritten. Play, and the world will respond."));
+    for (const s of slog.slice().reverse())
+      body.appendChild(el("div", "prow lore", `<span style="font-size:12px"><b style="color:var(--cedar)">D${s.day} · ${s.title}</b><br><span class="muted">${s.choice}</span><br><span style="color:var(--sand-dim)">${s.line}</span></span>`));
+  }
+
   if (tab === "log") {
     for (const l of g.log.slice(-50).reverse())
       body.appendChild(el("div", "logline " + (l.kind || ""),
@@ -2172,8 +2204,10 @@ function panelAct(fn) {
   const g = State.data;
   fn(g);
   Engine.checkRevelation(g);
+  if (typeof Story !== "undefined" && Story.check) Story.check(g);
   State.save();
   World.updateHUD();
+  if (Story._active) return; // a story beat took over; resume panel after
   World.showPanel(World._tab);
 }
 
