@@ -187,6 +187,27 @@ function windows(x, z, w, h, d, color, night, rnd) {
   }
 }
 
+/* ---- interactive landmarks -------------------------------------------------
+ * Register an interaction zone on a building. run(g) may open a modal, trigger
+ * an Action, or return {panel}. A faint glowing marker hints it's interactive.
+ * -------------------------------------------------------------------------- */
+function landmark(x, z, r, label, run, markerColor) {
+  if (markerColor !== null) {
+    const c = markerColor || 0xe6b450;
+    box(0.18, 0.18, 0.18, c, x, 2.4, z, { emissive: c, ei: 1.4, tex: null });
+    light(c, 2.2, x, 2.6, z, 6);
+  }
+  interactables.push({ type: "landmark", label, pos: new THREE.Vector3(x, 1, z), radius: r, mesh: null, run });
+}
+function examine(title, text, kind) {
+  return () => {
+    if (document.pointerLockElement) document.exitPointerLock();
+    UI.modal(`<h2>${title}</h2><p style="font-size:14px">${text}</p>`);
+    Engine.push(State.data, `You examine ${title}.`, kind || "explore");
+    return {};
+  };
+}
+
 /* Gradient sky dome, a sun or moon disc, and stars at night. */
 function buildSky(theme, g) {
   if (theme.tex === "fungal") return; // the Sub-Strata is underground; no sky
@@ -513,6 +534,13 @@ function spawnPeople(g, id, rnd) {
 World._agentCount = () => agents.length;
 World._agentPositions = () => agents.map((a) => [a.grp.position.x.toFixed(2), a.grp.position.z.toFixed(2), a.state]);
 World._openFirstDialogue = () => { if (agents[0]) openDialogue(agents[0].meta, agents[0]); };
+World._landmarks = () => interactables.filter((i) => i.type === "landmark").map((i) => i.label);
+World._gotoLandmark = (n) => {
+  const ls = interactables.filter((i) => i.type === "landmark"); const it = ls[n || 0]; if (!it) return null;
+  player.pos.set(it.pos.x, 1.7, it.pos.z + 1.5); yaw = Math.PI; updateFocus();
+  return focus ? focus.label : null;
+};
+World._focusLabel = () => focus ? focus.label : null;
 World._inspect = (i) => { const a = agents[i || 0]; if (!a) return; a.grp.position.set(0, 0, 0);
   a.state = "frozen"; a.facing = a.grp.rotation.y = Math.PI * 0.82;
   player.pos.set(0, 1.5, 6.8); yaw = Math.PI; pitch = -0.12; };
@@ -658,6 +686,7 @@ const THEMES = {
       }
       box(3.2, 2.4, 3.2, 0xc89a55, 0, tiers * 1.6 + 1.2, 0, { emissive: 0x6a4a18, ei: 0.5 });
       light(0xffcf80, 9, 0, tiers * 1.6 + 2, 0, 42);
+      landmark(0, 10.5, 4, "Ascend the Grand Ziggurat", (g) => Actions.pray(g), 0xffcf80);
       // braziers up the approach + banners + offering crates
       for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + 0.3, r = 13; brazier(Math.cos(a) * r, Math.sin(a) * r); }
       for (let i = 0; i < 10; i++) {
@@ -720,6 +749,10 @@ const THEMES = {
       box(2, 2, 2, 0xe6b450, 0, 2, 0, { emissive: 0xe6b450, ei: 0.85, tex: null });
       light(0xffd070, 10, 0, 3.5, 0, 24);
       brazier(-4, 4); brazier(4, 4); brazier(-4, -4); brazier(4, -4);
+      landmark(0, 3.4, 3.2, "Pray at the Inner Sanctum",
+        (g) => Actions.pray(g), 0xe6b450);
+      landmark(13, 6, 3, "The place where nothing happens",
+        examine("The Quiet Ground", "A patch of the quarter where, by every account anyone can find, violence has simply never occurred. People in extreme distress grow calm here. The temple offers no explanation; it does not call it anything. It only keeps the lamps lit and lets the stones be what they are.", "omen"), 0x9aa6c0);
       for (let i = 0; i < 6; i++) {                                                // idol statues
         const a = i * Math.PI / 3 + 0.5, r = 11, x = Math.cos(a) * r, z = Math.sin(a) * r;
         box(1, 0.5, 1, 0x52535c, x, 0.25, z, { tex: "stone" });
@@ -749,6 +782,8 @@ const THEMES = {
         for (let m = 0; m < 4; m++) box(1, 0.8, 1, 0x262420, sx - 1.4 + (m % 2) * 2.8, 17.4, sz - 1.4 + ((m / 2) | 0) * 2.8, { tex: "concrete" });
         brazier(sx, sz + 3);
       }
+      landmark(-22, -18, 4.5, "The Kol Family Keep",
+        examine("The Kol Keep", "Eight hundred years one family has held these walls, maintaining gatehouses and arrow-slits for a siege that never quite came. They are criminal organisation, private militia, political faction, and hereditary aristocracy at once — and three of their children sit in the city's legal government. The message of the architecture is plain: you are not welcome here unless we already know you.", "world"), 0xff7a30);
       // ground clutter: crates, barrels, chains between keeps
       for (let i = 0; i < 10; i++) { const x = (rnd() - 0.5) * 40, z = (rnd() - 0.5) * 40; if (Math.hypot(x, z) < 9) continue; rnd() > 0.5 ? crate(x, z, 0.8, "concrete") : barrel(x, z); }
       wire([-22, 12, -22], [22, 12, -22], 0x14120e); wire([-22, 12, 22], [22, 12, 22], 0x14120e);
@@ -779,6 +814,12 @@ const THEMES = {
         if (rnd() > 0.8) barrel(x - 1.5, z);
         if (topY > 2) tops.push([x, topY, z]);
       }
+      // a communal cistern — the heart of the district's self-governance
+      box(4, 1.4, 4, 0x3a4a4a, 7, 0.7, -6, { tex: "concrete" });
+      box(3, 0.3, 3, 0x2a5a6a, 7, 1.5, -6, { emissive: 0x1a3a4a, ei: 0.3, tex: null });
+      landmark(7, -6, 3.5, "The Council Cistern",
+        examine("The Council Cistern", "Salvaged solar panels feed ancient aqueduct lines into a shared tank, kept by rotating volunteer teams who know by heart which walls bear load and which water channels serve the whole block. There is no formal government here, but there is governance — more responsive than anything the city provides, because the people running it live here and depend on it working.", "world"), 0x38d0c8);
+
       // cables + laundry strung between rooftops
       for (let i = 0; i + 1 < tops.length && i < 26; i += 2) {
         const a = tops[i], b = tops[(i + 3) % tops.length];
@@ -819,6 +860,13 @@ const THEMES = {
         wire([a[0], a[1] * 0.7, a[2]], [b[0], b[1] * 0.7, b[2]], 0x0c0c12);
       }
       for (let i = 0; i < 8; i++) lampPost((rnd() - 0.5) * 44, (rnd() - 0.5) * 44, neon[(rnd() * neon.length) | 0], 3.2);
+      // a back-room augmentation clinic that runs in the dark
+      box(5, 4, 4, 0x14141c, -10, 2, 8, { tex: "panel", metal: 0.4 });
+      box(1, 2.2, 0.2, 0xff5c7a, -10, 1.6, 10.05, { emissive: 0xff5c7a, ei: 1.2, tex: null });
+      landmark(-10, 10.5, 3.5, "Black-market Aug Clinic", (g) => {
+        if (g.aug) return Actions.tuneAug(g);
+        return examine("Black-market Clinic", "Behind an unmarked door, a clinic that operates with no power signature — invisible until the grid drops on schedule, when the operating rooms fill with patients who could not come in daylight. It runs an entire informal medical system for augments the corporate warranties won't touch.", "world")();
+      }, 0xff5c7a);
     },
   },
   spire: {
@@ -840,6 +888,8 @@ const THEMES = {
       box(10, 1, 10, 0xf0f4f8, 0, 0.5, 0, { metal: 0.4, rough: 0.15 });
       box(1.2, 9, 1.2, 0xdfe8f0, 0, 5, 0, { metal: 0.6, rough: 0.1, emissive: 0x4a6a8a, ei: 0.3 });
       box(2.4, 0.6, 2.4, 0xe6eef4, 0, 9.3, 0, { metal: 0.7, rough: 0.1, emissive: 0x88c0ff, ei: 0.6, tex: null });
+      landmark(0, 6.5, 4, "The Razed Foundation",
+        examine("The Razed Foundation", "Every other district in the city is built on top of what came before. Here the corporations demolished the ancient layer completely and started from a cleared footprint — the only place in Ur-Axiom where the deep history is simply absent. Every faction has read that erasure and remembered it. The absence is the most aggressive political gesture anyone has made.", "world"), 0x88c0ff);
       for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3, r = 7; box(1.4, 0.8, 1.4, 0xd8e2ea, Math.cos(a) * r, 0.4, Math.sin(a) * r, { tex: "panel", metal: 0.3 }); box(1, 1, 1, 0x2a5a3a, Math.cos(a) * r, 1.2, Math.sin(a) * r, { tex: null, rough: 1 }); }
     },
   },
@@ -870,6 +920,11 @@ const THEMES = {
         }
         if (rnd() > 0.7) crate(x + 1.4, z, 0.6, "concrete");
       }
+      // a still, lightless chamber where violence has never happened
+      box(3, 3, 3, 0x0a0e0c, 0, 1.5, -4, { tex: "stone" });
+      landmark(0, -1, 3, "The Deep-Dark Chamber",
+        examine("The Deep-Dark Chamber", "A passage with no light at all opens into a space where, the old residents swear, nothing bad has ever occurred. On the far wall an alignment is cut to a star position the sky held thousands of years before the city above was built. The builders below and the gods above were not the same — and the builders knew it first.", "fragment"), 0x4dff9a);
+
       // stolen pipes/cables running between pillars under the ceiling
       for (let i = 0; i + 1 < pillars.length && i < 24; i += 2) {
         const a = pillars[i], b = pillars[(i + 5) % pillars.length];

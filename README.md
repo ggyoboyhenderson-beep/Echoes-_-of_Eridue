@@ -46,7 +46,10 @@ Works in any modern WebGL browser. Pick a protagonist, then:
 
 Walk up to a **gate** to travel to an adjacent district, an **NPC** to talk, the
 **Market** stall to trade, **Rest** to sleep, the **Food Vendor** to eat, and so
-on. Progress autosaves to `localStorage` after every action.
+on. Key **landmark buildings** are interactive too — approach the Grand Ziggurat
+to pray, a warlord keep, the corporate monument, a black-market clinic, or the
+deep-dark chamber to examine them for lore or trigger an action. Progress
+autosaves to `localStorage` after every action.
 
 ---
 

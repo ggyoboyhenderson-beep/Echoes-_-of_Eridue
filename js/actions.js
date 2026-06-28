@@ -256,6 +256,23 @@ Actions.omen = function (g) {
   return Actions._do(g, 1, `You sit with the temple readers. ${text} Dismiss it as superstition at your own expense.`, "omen");
 };
 
+/* ---- PRAY at a temple landmark (Grand Ziggurat / sanctum) ---------------- */
+Actions.pray = function (g) {
+  Engine.advance(g, 2);
+  g.fatigue = Engine.clamp(g.fatigue + 6, 0, 120);
+  Engine.shiftFaction(g, "temple", 3);
+  g.rep[g.here] = Engine.clamp((g.rep[g.here] || 0) + 2, -100, 100);
+  // The divine occasionally answers in ways too specific to be chance.
+  let extra = "";
+  if (!g.pendingOmen && Engine.chance(0.5)) {
+    const text = Engine.castOmen(g);
+    if (text) extra = " As you rise, a temple reader murmurs a warning: " + text;
+  }
+  const msg = "You ascend to the summit and pray among the cedar smoke. The priesthood notes your devotion." + extra;
+  Engine.push(g, msg, "omen");
+  return { msg, kind: "omen" };
+};
+
 /* ---- EXPLORE (find fragments, salvage, trouble) -------------------------- */
 Actions.explore = function (g) {
   const d = AXIOM.DISTRICTS[g.here];
