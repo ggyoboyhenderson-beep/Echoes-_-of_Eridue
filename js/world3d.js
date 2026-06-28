@@ -30,6 +30,15 @@ let toastTimer = 0;
 const ACTIVATE = 4.2;     // proximity radius to interact
 const BOUND = 27;         // half-size of a district plot
 
+/* interior (walk-in building) state */
+let inInterior = false;
+let interiorSpec = null;
+let returnDistrict = null;
+let currentFloor = 0;
+let currentFloorY = 0;
+const INNER = 13;         // half-size of an interior floor
+const FLOOR_H = 4;        // floor-to-ceiling height
+
 /* ---- tiny seeded RNG for stable district layouts ------------------------ */
 function mulberry32(a) {
   return function () {
@@ -530,6 +539,206 @@ function spawnPeople(g, id, rnd) {
   });
 }
 
+/* ======================================================================== */
+/* INTERIORS — walk-in, multi-floor buildings. Each room has a function, and
+ * the function is the reason the room exists.                               */
+let floorLabels = [];
+function placeInteriorStation(s, x, z, baseY, floor) {
+  const m = box(1.0, 1.1, 1.0, s.color, x, baseY + 0.55, z, { emissive: s.color, ei: 0.3, tex: null });
+  light(s.color, 4, x, baseY + 2.2, z, 7);
+  const lbl = makeLabel(s.label, "#" + new THREE.Color(s.color).getHexString());
+  lbl.position.set(x, baseY + 1.7, z); scene.add(lbl); labelSprites.push(lbl);
+  floorLabels.push({ spr: lbl, floor });
+  interactables.push({ type: s.itype || "station", label: s.label, floor,
+    pos: new THREE.Vector3(x, baseY + 1, z), radius: ACTIVATE, mesh: m, run: s.run });
+}
+function setInteriorFloorVis() {
+  for (const fl of floorLabels) fl.spr.visible = (fl.floor === currentFloor);
+}
+
+function spawnInteriorNPC(meta, x, z, baseY, floor, facing) {
+  const built = makeHuman(meta.appear || People.namedAppearance(meta));
+  built.grp.position.set(x, baseY, z);
+  built.grp.rotation.y = facing || 0;
+  scene.add(built.grp);
+  const tag = makeLabel(meta.name, meta.ambient ? "#cdbf9a" : "#e6b450");
+  tag.position.set(0, 2.05 / built.grp.scale.x, 0); tag.scale.set(3.4, 0.85, 1);
+  built.grp.add(tag);
+  const agent = { meta, grp: built.grp, parts: built.parts, facing: facing || 0,
+    target: built.grp.position.clone(), speed: 0, phase: Math.random() * 6.28, amp: 0,
+    state: "idle", greeted: false, stationary: true, floor, baseY };
+  agents.push(agent);
+  interactables.push({ type: "npc", label: `Speak with ${meta.name}`, floor,
+    pos: built.grp.position, radius: 3.3, mesh: null, meta, agent,
+    run: () => { openDialogue(meta, agent); return {}; } });
+}
+
+function changeFloor(target) {
+  currentFloor = target; currentFloorY = target * FLOOR_H;
+  player.pos.set(INNER - 4, currentFloorY + 1.7, INNER - 4);
+  setInteriorFloorVis();
+  updateFocus();
+}
+
+function namedMeta(id, district) {
+  const def = Engine.NPC_DEFS.find((d) => d.id === id); if (!def) return null;
+  return { id: def.id, name: def.name, role: def.role, kind: def.kind, faction: def.faction,
+    district, ambient: false, hub: def.hub, appear: People.namedAppearance(def) };
+}
+
+/* Interior blueprints. Every room states why it exists and gives you something
+ * to do that belongs there — the floor IS the reason. */
+function buildSpec(kind, district) {
+  const g = State.data;
+  const ST = (label, color, run, itype) => ({ label, color, run, itype });
+  const buy = (id) => (g) => Actions.buy(g, id);
+  const market = { label: "Trade at the counter", color: 0xc8a050, run: () => ({ panel: "market" }) };
+
+  switch (kind) {
+    case "temple": return {
+      title: "The Grand Ziggurat", floorTex: "brick", floorColor: 0x8a6e4a, wallTex: "brick", wallColor: 0x6a5238, sky: 0x1a130c, hemi: 0x7a6648,
+      floors: [
+        { name: "Offering Hall", stations: [ST("Pray", 0xffcf80, (g) => Actions.pray(g)), ST("Buy blessed bread", 0xc89a55, buy("bread")), ST("Examine the votive walls", 0x9a8a6a, examine("Votive Walls", "Four thousand years of offerings, layered plaster over plaster. The oldest are illegible; people still leave new ones, because the gods here are not metaphors and the omens are accurate at rates chance does not produce."))] },
+        { name: "Scriptorium", stations: [ST("Copy prayer-records (work)", 0x7a6a48, (g) => Actions.work(g)), ST("Study rhetoric", 0x4a6a8a, () => ({ panel: "skills" }))], npcs: [namedMeta("priest", district)].filter(Boolean) },
+        { name: "Summit Sanctum", stations: [ST("Pray at the summit", 0xffcf80, (g) => Actions.pray(g)), ST("Examine the off-star doorway", 0xe6b450, examine("The Off-Star Doorway", "One doorway here is oriented to no star anyone tracks now — it points at a horizon position the sky held thousands of years before the Crown was built. Someone aligned it to a memory.", "fragment"))] },
+      ],
+    };
+    case "bazaar": return {
+      title: "The Hanging Market Hall", floorTex: "brick", floorColor: 0x9a8458, wallTex: "brick", wallColor: 0x6a5838, sky: 0x1c160e, hemi: 0x8a7450,
+      floors: [
+        { name: "Raw Goods", stations: [ST("Buy grain", 0xb0962b, buy("grain")), ST("Buy river fish", 0x2b7ab0, buy("fish")), ST("Buy clean water", 0x2bb06a, buy("water")), ST("Haggle a shift (work)", 0x7a6a48, (g) => Actions.work(g))] },
+        { name: "Manufactured Goods", stations: [ST("Buy cloth", 0xb0452b, buy("cloth")), ST("Buy salvage parts", 0x7a2bb0, buy("parts")), market] },
+        { name: "Luxury & Information", stations: [ST("Buy a clay tablet", 0xe6b450, buy("relic")), ST("Examine the information brokers", 0x9aa6c0, examine("The Brokers' Gallery", "The upper terrace sells what the lower ones cannot: rumor, leverage, the location of a debtor. Every trade route in the world terminates somewhere below, and all of it is known up here, for a price."))], npcs: [namedMeta("arbiter", district)].filter(Boolean) },
+      ],
+    };
+    case "clinic": return {
+      title: "Back-room Aug Clinic", floorTex: "panel", floorColor: 0x1c1c26, wallTex: "panel", wallColor: 0x16161f, sky: 0x05050a, hemi: 0x303048,
+      floors: [
+        { name: "Triage", stations: [ST("Treat a wound", 0x5a7a5a, (g) => Actions.treat(g)), ST("Rest in recovery", 0x6b5030, (g) => Actions.sleep(g)), ST("Buy a medical kit", 0x38d0c8, buy("stim"))], npcs: [namedMeta("fixer", district)].filter(Boolean) },
+        { name: "Aug Bay", stations: [ST("Service augmentation", 0x38d0c8, (g) => Actions.tuneAug(g)), ST("Buy aug coolant", 0xc850ff, buy("augkit")), ST("Examine the parts wall", 0xff5c7a, examine("The Parts Wall", "Components from three incompatible manufacturers, sorted by what fails first. Corporate augments are clean and warrantied; everything here is cheaper, more creative, and fails in ways from inconvenient to disfiguring."))] },
+      ],
+    };
+    case "spire": return {
+      title: "Meridian Tower", floorTex: "marble", floorColor: 0xdfe4ea, wallTex: "marble", wallColor: 0xc8ccd2, sky: 0x9ab0c8, hemi: 0xffffff,
+      floors: [
+        { name: "Lobby", stations: [ST("Pass the biometric checkpoint", 0x88c0ff, examine("Biometric Lobby", "Genuinely clean, in a city where almost nothing is. Citizens here are corporate employees with contractual residences — lose the job, lose the home in thirty days. The anxiety is part of the product.")), ST("Buy clean stim", 0x9aaaba, buy("stim"))] },
+        { name: "Open-plan Offices", stations: [ST("Contract clerical work", 0x7a8a9a, (g) => Actions.work(g)), ST("Study negotiation", 0x4a6a8a, () => ({ panel: "skills" }))] },
+        { name: "Executive Suite", stations: [ST("Examine the above-the-smog view", 0xbfe2ff, examine("Above the Smog", "These floors sit above the city's permanent haze; clear sky and real sunlight, paid for deliberately in the architectural brief while the population below breathes the rest."))], npcs: [namedMeta("exec", district)].filter(Boolean) },
+      ],
+    };
+    case "keep": return {
+      title: "The Kol Keep", floorTex: "concrete", floorColor: 0x44423e, wallTex: "concrete", wallColor: 0x33312e, sky: 0x141414, hemi: 0x9a9690,
+      floors: [
+        { name: "Great Hall", stations: [ST("Examine the family banners", 0xff7a30, examine("The Family Banners", "Eight hundred years of a warlord line that became criminal organisation, private militia, political faction, and aristocracy at once. Three of their children sit in the city's legal government."))], npcs: [namedMeta("warlord", district)].filter(Boolean) },
+        { name: "Armory", stations: [ST("Buy contraband", 0xc0392b, buy("contraband")), ST("Buy salvage parts", 0x7a6a48, buy("parts")), ST("Drill with the blade", 0x4a6a8a, () => ({ panel: "skills" }))] },
+      ],
+    };
+    case "council": return {
+      title: "The Council House", floorTex: "plank", floorColor: 0x6a5236, wallTex: "plank", wallColor: 0x4a3f33, sky: 0x18120c, hemi: 0xd0b088,
+      floors: [
+        { name: "Council Room", stations: [ST("Examine the dispute ledger", 0x38d0c8, examine("The Dispute Ledger", "Neighborhood councils, resource committees, and dispute-resolution bodies manage what the city refuses to. More responsive than anything official, because the people running it live here.")), ST("Petition for work", 0x5a7a5a, (g) => Actions.work(g))], npcs: [namedMeta("councilor", district)].filter(Boolean) },
+        { name: "Infirmary", stations: [ST("Treat a wound", 0x5a7a5a, (g) => Actions.treat(g)), ST("Buy clean water", 0x2bb06a, buy("water"))], npcs: [namedMeta("doctor", district)].filter(Boolean) },
+      ],
+    };
+  }
+  return { title: "Building", floors: [{ name: "Ground Floor", stations: [] }] };
+}
+
+World.enterBuilding = function (spec) {
+  inInterior = true; interiorSpec = spec; returnDistrict = State.data.here;
+  currentFloor = 0; currentFloorY = 0;
+  while (scene.children.length) scene.remove(scene.children[0]);
+  interactables = []; agents = []; labelSprites = []; floorLabels = []; focus = null;
+
+  const sky = spec.sky != null ? spec.sky : 0x14110d;
+  scene.background = new THREE.Color(sky);
+  scene.fog = new THREE.Fog(sky, 14, 46);
+  scene.add(new THREE.HemisphereLight(spec.hemi || 0x6a6660, 0x100d0a, 0.55));
+  const sun = new THREE.DirectionalLight(0xfff0d8, 0.25); sun.position.set(8, 20, 6); scene.add(sun);
+
+  const nF = spec.floors.length;
+  const floorMat = () => new THREE.MeshStandardMaterial({ color: spec.floorColor || 0x4a3f33, roughness: 1,
+    map: Art && Art.detail(spec.floorTex || "stone", 6, 6), normalMap: Art && Art.detailNormal(spec.floorTex || "stone", 6, 6) });
+  const wallMat = new THREE.MeshStandardMaterial({ color: spec.wallColor || 0x3a332a, roughness: 1,
+    map: Art && Art.detail(spec.wallTex || "stone", 4, 2), normalMap: Art && Art.detailNormal(spec.wallTex || "stone", 4, 2) });
+
+  for (let f = 0; f < nF; f++) {
+    const baseY = f * FLOOR_H;
+    const floorDef = spec.floors[f];
+    // slab
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(INNER * 2 + 1, 0.3, INNER * 2 + 1), floorMat());
+    slab.position.set(0, baseY - 0.15, 0); slab.receiveShadow = true; scene.add(slab);
+    // perimeter walls (with a doorway gap on the ground floor entrance side)
+    const wh = FLOOR_H;
+    const seg = (w, h, d, x, y, z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat); m.position.set(x, y, z); m.receiveShadow = true; m.castShadow = true; scene.add(m); };
+    seg(INNER * 2, wh, 0.4, 0, baseY + wh / 2, -INNER);                       // back
+    seg(0.4, wh, INNER * 2, -INNER, baseY + wh / 2, 0);                       // left
+    seg(0.4, wh, INNER * 2, INNER, baseY + wh / 2, 0);                        // right
+    if (f === 0) { // front wall with a door gap in the middle
+      seg(INNER - 1.5, wh, 0.4, -(INNER + 1.5) / 2 - 0.25, baseY + wh / 2, INNER);
+      seg(INNER - 1.5, wh, 0.4, (INNER + 1.5) / 2 + 0.25, baseY + wh / 2, INNER);
+      seg(3, wh - 2.4, 0.4, 0, baseY + wh - (wh - 2.4) / 2, INNER);          // lintel above door
+    } else {
+      seg(INNER * 2, wh, 0.4, 0, baseY + wh / 2, INNER);
+    }
+    // ceiling for the top floor
+    if (f === nF - 1) { const c = new THREE.Mesh(new THREE.BoxGeometry(INNER * 2 + 1, 0.3, INNER * 2 + 1), wallMat); c.position.set(0, baseY + wh - 0.15, 0); scene.add(c); }
+    // a couple of interior partition stubs to suggest rooms
+    seg(0.3, wh - 0.6, 8, -2, baseY + (wh - 0.6) / 2, -INNER + 6);
+    seg(8, wh - 0.6, 0.3, INNER - 6, baseY + (wh - 0.6) / 2, 2);
+    // lighting per floor
+    light(0xffe2b0, 7, 0, baseY + wh - 0.6, 0, 24);
+    light(0xffe2b0, 4, -7, baseY + 2.4, -6, 12);
+    light(0xffe2b0, 4, 7, baseY + 2.4, 6, 12);
+    // floor label banner
+    const fl = makeLabel(`${f + 1}F · ${floorDef.name}`, "#e6b450");
+    fl.position.set(0, baseY + wh - 0.5, -INNER + 0.6); fl.scale.set(6, 1.4, 1); scene.add(fl);
+    floorLabels.push({ spr: fl, floor: f });
+
+    // stations on this floor (arranged on a ring)
+    const st = floorDef.stations || [];
+    st.forEach((s, i) => {
+      const ang = (i / Math.max(1, st.length)) * Math.PI * 1.4 - Math.PI * 0.7;
+      const r = 7.5;
+      placeInteriorStation(s, Math.cos(ang) * r, Math.sin(ang) * r - 1, baseY, f);
+    });
+    // resident NPCs on this floor
+    (floorDef.npcs || []).forEach((meta, i) => {
+      spawnInteriorNPC(meta, -8 + i * 5, -INNER + 4, baseY, f, 0);
+    });
+
+    // stairs up / down at a back corner
+    const sx = -INNER + 3.5, sz = -INNER + 3.5;
+    if (f < nF - 1) {
+      for (let k = 0; k < 6; k++) box(2.4, 0.3, 0.7, 0x5a4a38, sx, baseY + 0.15 + k * 0.5, sz + k * 0.6, { tex: "stone" });
+      interactables.push({ type: "stairs", label: `Go up — ${spec.floors[f + 1].name}`, floor: f,
+        pos: new THREE.Vector3(sx, baseY + 1, sz + 1.8), radius: 3, mesh: null,
+        run: () => { changeFloor(f + 1); return { msg: `You climb to the ${spec.floors[f + 1].name}.`, kind: "travel" }; } });
+    }
+    if (f > 0) {
+      interactables.push({ type: "stairs", label: `Go down — ${spec.floors[f - 1].name}`, floor: f,
+        pos: new THREE.Vector3(INNER - 4, baseY + 1, INNER - 4), radius: 3, mesh: null,
+        run: () => { changeFloor(f - 1); return { msg: `You descend to the ${spec.floors[f - 1].name}.`, kind: "travel" }; } });
+      box(1.6, 0.2, 1.6, 0x4a3f33, INNER - 4, baseY + 0.1, INNER - 4, { tex: "stone" });
+    }
+  }
+
+  // exit door on the ground floor
+  box(3, FLOOR_H - 0.4, 0.2, 0x2a2018, 0, FLOOR_H / 2 - 0.2, INNER - 0.1, { emissive: 0x1a1208, ei: 0.2, tex: null });
+  interactables.push({ type: "exit", label: `Step outside — ${AXIOM.DISTRICTS[returnDistrict].name}`, floor: 0,
+    pos: new THREE.Vector3(0, 1, INNER - 1.5), radius: 3.2, mesh: null,
+    run: () => { World.exitBuilding(); return {}; } });
+
+  player.pos.set(0, 1.7, INNER - 3); yaw = Math.PI; pitch = 0;
+  setInteriorFloorVis();
+  World.updateHUD();
+};
+
+World.exitBuilding = function () {
+  inInterior = false; interiorSpec = null; currentFloor = 0; currentFloorY = 0;
+  World.buildDistrict(returnDistrict, true);
+};
+
 /* test/debug hooks */
 World._agentCount = () => agents.length;
 World._agentPositions = () => agents.map((a) => [a.grp.position.x.toFixed(2), a.grp.position.z.toFixed(2), a.state]);
@@ -541,6 +750,15 @@ World._gotoLandmark = (n) => {
   return focus ? focus.label : null;
 };
 World._focusLabel = () => focus ? focus.label : null;
+World._goto = (type, n) => {
+  const list = interactables.filter((i) => i.type === type && (i.floor === undefined || i.floor === currentFloor));
+  const it = list[n || 0]; if (!it) return null;
+  player.pos.set(it.pos.x, currentFloorY + 1.7, it.pos.z + 1.2); updateFocus();
+  return focus ? focus.label : null;
+};
+World._stations = () => interactables.filter((i) => (i.floor === undefined || i.floor === currentFloor) && (i.type === "station" || i.type === "exit" || i.type === "stairs" || i.type === "npc")).map((i) => i.type + ":" + i.label);
+World._floor = () => currentFloor;
+World._inInterior = () => inInterior;
 World._inspect = (i) => { const a = agents[i || 0]; if (!a) return; a.grp.position.set(0, 0, 0);
   a.state = "frozen"; a.facing = a.grp.rotation.y = Math.PI * 0.82;
   player.pos.set(0, 1.5, 6.8); yaw = Math.PI; pitch = -0.12; };
@@ -573,13 +791,16 @@ function updateAgents(dt) {
     const gp = ag.grp.position;
     const dxp = player.pos.x - gp.x, dzp = player.pos.z - gp.z;
     const distP = Math.hypot(dxp, dzp);
+    const sameFloor = (ag.floor === undefined || ag.floor === currentFloor);
     let moving = false, targetFacing = ag.facing;
 
-    if (ag === dlgAgent || distP < REACT) {
+    if (sameFloor && (ag === dlgAgent || distP < REACT)) {
       // react to your approach: stop and turn to face you
       ag.state = "react";
       targetFacing = Math.atan2(dxp, dzp);
       if (!ag.greeted) ag.greeted = true;
+    } else if (ag.stationary) {
+      ag.state = "idle"; targetFacing = ag.facing;
     } else {
       ag.state = "wander";
       const dx = ag.target.x - gp.x, dz = ag.target.z - gp.z;
@@ -616,7 +837,7 @@ function updateAgents(dt) {
     ag.idle = (ag.idle || Math.random() * 6) + dt;
     const breathe = Math.sin(ag.idle * 1.6) * 0.02;
     const bob = moving ? Math.abs(Math.sin(ag.phase)) * 0.04 * ag.amp : 0;
-    ag.grp.position.y = bob;
+    ag.grp.position.y = (ag.baseY || 0) + bob;
     if (!moving) { P.larmPivot.rotation.x = breathe; P.rarmPivot.rotation.x = -breathe; }
 
     // head turns toward you when you're near (reacting to your approach)
@@ -626,7 +847,7 @@ function updateAgents(dt) {
         const local = Math.atan2(dxp, dzp) - ag.facing;
         let n = local; while (n > Math.PI) n -= Math.PI * 2; while (n < -Math.PI) n += Math.PI * 2;
         hy = Math.max(-0.9, Math.min(0.9, n));
-        hx = Math.max(-0.4, Math.min(0.4, (player.pos.y - 1.86) * -0.3));
+        hx = Math.max(-0.4, Math.min(0.4, (player.pos.y - ((ag.baseY || 0) + 1.86)) * -0.3));
       } else { hy = Math.sin(ag.idle * 0.7) * 0.25; }
       P.head.rotation.y += (hy - P.head.rotation.y) * Math.min(1, dt * 6);
       P.head.rotation.x += (hx - P.head.rotation.x) * Math.min(1, dt * 6);
@@ -686,7 +907,7 @@ const THEMES = {
       }
       box(3.2, 2.4, 3.2, 0xc89a55, 0, tiers * 1.6 + 1.2, 0, { emissive: 0x6a4a18, ei: 0.5 });
       light(0xffcf80, 9, 0, tiers * 1.6 + 2, 0, 42);
-      landmark(0, 10.5, 4, "Ascend the Grand Ziggurat", (g) => Actions.pray(g), 0xffcf80);
+      landmark(0, 10.5, 4, "Enter the Grand Ziggurat", () => { World.enterBuilding(buildSpec("temple", "ziggurat_crown")); return {}; }, 0xffcf80);
       // braziers up the approach + banners + offering crates
       for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + 0.3, r = 13; brazier(Math.cos(a) * r, Math.sin(a) * r); }
       for (let i = 0; i < 10; i++) {
@@ -727,6 +948,11 @@ const THEMES = {
         if (rnd() > 0.5) banner(x, z, cols[(rnd() * cols.length) | 0], 0.5, 1.4, 3.4);
         else lampPost(x, z, 0xffcf80, 3);
       }
+      // the three-storey market hall (raw / manufactured / luxury)
+      box(7, 9, 7, 0x6a5838, 14, 4.5, -8, { tex: "brick" });
+      box(7.4, 0.4, 7.4, 0x7a6444, 14, 9, -8, { tex: "brick" });
+      landmark(14, -3, 4, "Enter the Market Hall",
+        () => { World.enterBuilding(buildSpec("bazaar", "hanging_market")); return {}; }, 0xc8a050);
     },
   },
   god_quarter: {
@@ -782,8 +1008,8 @@ const THEMES = {
         for (let m = 0; m < 4; m++) box(1, 0.8, 1, 0x262420, sx - 1.4 + (m % 2) * 2.8, 17.4, sz - 1.4 + ((m / 2) | 0) * 2.8, { tex: "concrete" });
         brazier(sx, sz + 3);
       }
-      landmark(-22, -18, 4.5, "The Kol Family Keep",
-        examine("The Kol Keep", "Eight hundred years one family has held these walls, maintaining gatehouses and arrow-slits for a siege that never quite came. They are criminal organisation, private militia, political faction, and hereditary aristocracy at once — and three of their children sit in the city's legal government. The message of the architecture is plain: you are not welcome here unless we already know you.", "world"), 0xff7a30);
+      landmark(-22, -18, 4.5, "Enter the Kol Keep",
+        () => { World.enterBuilding(buildSpec("keep", "ironwall")); return {}; }, 0xff7a30);
       // ground clutter: crates, barrels, chains between keeps
       for (let i = 0; i < 10; i++) { const x = (rnd() - 0.5) * 40, z = (rnd() - 0.5) * 40; if (Math.hypot(x, z) < 9) continue; rnd() > 0.5 ? crate(x, z, 0.8, "concrete") : barrel(x, z); }
       wire([-22, 12, -22], [22, 12, -22], 0x14120e); wire([-22, 12, 22], [22, 12, 22], 0x14120e);
@@ -817,8 +1043,13 @@ const THEMES = {
       // a communal cistern — the heart of the district's self-governance
       box(4, 1.4, 4, 0x3a4a4a, 7, 0.7, -6, { tex: "concrete" });
       box(3, 0.3, 3, 0x2a5a6a, 7, 1.5, -6, { emissive: 0x1a3a4a, ei: 0.3, tex: null });
-      landmark(7, -6, 3.5, "The Council Cistern",
+      landmark(7, -6, 3.2, "The Council Cistern",
         examine("The Council Cistern", "Salvaged solar panels feed ancient aqueduct lines into a shared tank, kept by rotating volunteer teams who know by heart which walls bear load and which water channels serve the whole block. There is no formal government here, but there is governance — more responsive than anything the city provides, because the people running it live here and depend on it working.", "world"), 0x38d0c8);
+      // the council house — a salvaged tenement that runs the district
+      box(6, 6, 6, 0x5a4a3a, -8, 3, -8, { tex: "plank" });
+      box(6.4, 0.4, 6.4, 0x3a3630, -8, 6, -8, { tex: "panel", metal: 0.4 });
+      landmark(-8, -3.5, 4, "Enter the Council House",
+        () => { World.enterBuilding(buildSpec("council", "broken_crown")); return {}; }, 0xffc080);
 
       // cables + laundry strung between rooftops
       for (let i = 0; i + 1 < tops.length && i < 26; i += 2) {
@@ -863,10 +1094,8 @@ const THEMES = {
       // a back-room augmentation clinic that runs in the dark
       box(5, 4, 4, 0x14141c, -10, 2, 8, { tex: "panel", metal: 0.4 });
       box(1, 2.2, 0.2, 0xff5c7a, -10, 1.6, 10.05, { emissive: 0xff5c7a, ei: 1.2, tex: null });
-      landmark(-10, 10.5, 3.5, "Black-market Aug Clinic", (g) => {
-        if (g.aug) return Actions.tuneAug(g);
-        return examine("Black-market Clinic", "Behind an unmarked door, a clinic that operates with no power signature — invisible until the grid drops on schedule, when the operating rooms fill with patients who could not come in daylight. It runs an entire informal medical system for augments the corporate warranties won't touch.", "world")();
-      }, 0xff5c7a);
+      landmark(-10, 10.5, 3.5, "Enter the Aug Clinic",
+        () => { World.enterBuilding(buildSpec("clinic", "neon_labyrinth")); return {}; }, 0xff5c7a);
     },
   },
   spire: {
@@ -888,8 +1117,10 @@ const THEMES = {
       box(10, 1, 10, 0xf0f4f8, 0, 0.5, 0, { metal: 0.4, rough: 0.15 });
       box(1.2, 9, 1.2, 0xdfe8f0, 0, 5, 0, { metal: 0.6, rough: 0.1, emissive: 0x4a6a8a, ei: 0.3 });
       box(2.4, 0.6, 2.4, 0xe6eef4, 0, 9.3, 0, { metal: 0.7, rough: 0.1, emissive: 0x88c0ff, ei: 0.6, tex: null });
-      landmark(0, 6.5, 4, "The Razed Foundation",
+      landmark(0, 6.5, 3.5, "The Razed Foundation",
         examine("The Razed Foundation", "Every other district in the city is built on top of what came before. Here the corporations demolished the ancient layer completely and started from a cleared footprint — the only place in Ur-Axiom where the deep history is simply absent. Every faction has read that erasure and remembered it. The absence is the most aggressive political gesture anyone has made.", "world"), 0x88c0ff);
+      landmark(15, 0, 4, "Enter Meridian Tower",
+        () => { World.enterBuilding(buildSpec("spire", "spire")); return {}; }, 0xbfe2ff);
       for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3, r = 7; box(1.4, 0.8, 1.4, 0xd8e2ea, Math.cos(a) * r, 0.4, Math.sin(a) * r, { tex: "panel", metal: 0.3 }); box(1, 1, 1, 0x2a5a3a, Math.cos(a) * r, 1.2, Math.sin(a) * r, { tex: null, rough: 1 }); }
     },
   },
@@ -972,15 +1203,17 @@ function updateMovement(dt) {
   const move = new THREE.Vector3().addScaledVector(fwd, f).addScaledVector(right, s);
   if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed * dt);
   player.pos.add(move);
-  // clamp to plot
-  player.pos.x = Math.max(-BOUND + 1.5, Math.min(BOUND - 1.5, player.pos.x));
-  player.pos.z = Math.max(-BOUND + 1.5, Math.min(BOUND - 1.5, player.pos.z));
-  player.pos.y = 1.7;
+  // clamp to the plot (or the current interior floor)
+  const b = inInterior ? INNER : BOUND;
+  player.pos.x = Math.max(-b + 1.5, Math.min(b - 1.5, player.pos.x));
+  player.pos.z = Math.max(-b + 1.5, Math.min(b - 1.5, player.pos.z));
+  player.pos.y = (inInterior ? currentFloorY : 0) + 1.7;
 }
 
 function updateFocus() {
   let best = null, bestD = Infinity;
   for (const it of interactables) {
+    if (inInterior && it.floor !== undefined && it.floor !== currentFloor) continue;
     const dx = it.pos.x - player.pos.x, dz = it.pos.z - player.pos.z;
     const dist = Math.hypot(dx, dz);
     if (dist < it.radius && dist < bestD) { best = it; bestD = dist; }
@@ -1034,7 +1267,12 @@ World.updateHUD = function () {
   document.getElementById("hud-weather").textContent = AXIOM.WEATHER[g.weather].name;
   document.getElementById("hud-money").textContent = `${g.money} shekels`;
   const distChip = document.getElementById("hud-district");
-  distChip.innerHTML = `<span class="crest">${Art.emblem(g.here)}</span>${d.name}`;
+  if (inInterior && interiorSpec) {
+    const fl = interiorSpec.floors[currentFloor];
+    distChip.innerHTML = `<span class="crest">${Art.emblem(returnDistrict)}</span>${interiorSpec.title} · ${currentFloor + 1}F ${fl ? fl.name : ""}`;
+  } else {
+    distChip.innerHTML = `<span class="crest">${Art.emblem(g.here)}</span>${d.name}`;
+  }
 
   const bar = (label, val, invert) => {
     const pct = Math.max(0, Math.min(100, val));
