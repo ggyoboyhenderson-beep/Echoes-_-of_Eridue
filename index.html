@@ -95,6 +95,21 @@
 
   <!-- Three.js (UMD, vendored — defines global THREE; runs from file://) -->
   <script src="js/vendor/three.min.js"></script>
+  <!-- Post-processing pipeline (Three r128 examples, MIT; classic scripts).
+       Shaders first, then EffectComposer (defines THREE.Pass), then passes. -->
+  <script src="js/vendor/pp/CopyShader.js"></script>
+  <script src="js/vendor/pp/LuminosityHighPassShader.js"></script>
+  <script src="js/vendor/pp/FXAAShader.js"></script>
+  <script src="js/vendor/pp/SSAOShader.js"></script>
+  <script src="js/vendor/pp/DepthLimitedBlurShader.js"></script>
+  <script src="js/vendor/pp/UnpackDepthRGBAShader.js"></script>
+  <script src="js/vendor/pp/SimplexNoise.js"></script>
+  <script src="js/vendor/pp/EffectComposer.js"></script>
+  <script src="js/vendor/pp/RenderPass.js"></script>
+  <script src="js/vendor/pp/ShaderPass.js"></script>
+  <script src="js/vendor/pp/MaskPass.js"></script>
+  <script src="js/vendor/pp/UnrealBloomPass.js"></script>
+  <script src="js/vendor/pp/SSAOPass.js"></script>
   <!-- Graphic art layer (procedural textures + SVG crests; needs THREE) -->
   <script src="js/art.js"></script>
   <!-- Simulation core (classic scripts; shared globals) -->

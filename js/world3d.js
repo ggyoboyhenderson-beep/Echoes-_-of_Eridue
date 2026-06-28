@@ -18,6 +18,7 @@ window.World3D = World;
 
 /* ---- module state ------------------------------------------------------- */
 let renderer, scene, camera, clock;
+let composer, ssaoPass, bloomPass, fxaaPass, ppOn = true;
 let yaw = 0, pitch = 0;
 const keys = {};
 const player = { pos: new THREE.Vector3(0, 1.7, 18), vel: new THREE.Vector3() };
@@ -64,6 +65,7 @@ World.init = function () {
   clock = new THREE.Clock();
   scene = new THREE.Scene();
 
+  buildComposer();
   resize();
   addEventListener("resize", resize);
 
@@ -72,6 +74,7 @@ World.init = function () {
     keys[e.code] = true;
     if (e.code === "KeyE") { if (dialogOpen()) closeDialog(); else World.interact(); }
     if (e.code === "Tab") { e.preventDefault(); if (!dialogOpen()) World.togglePanels(); }
+    if (e.code === "KeyP") { ppOn = !ppOn; toast(`Cinematic rendering ${ppOn ? "on" : "off"}.`, ""); }
   });
   addEventListener("keyup", (e) => { keys[e.code] = false; });
 
@@ -102,7 +105,40 @@ function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
+  sizeComposer();
 }
+
+/* ---- post-processing pipeline (the AAA-technique families, in-browser) --- */
+function buildComposer() {
+  if (typeof THREE.EffectComposer !== "function") { ppOn = false; return; } // graceful fallback
+  composer = new THREE.EffectComposer(renderer);
+  composer.addPass(new THREE.RenderPass(scene, camera));
+  // Ambient occlusion — contact shadowing in creases and corners.
+  if (THREE.SSAOPass) {
+    ssaoPass = new THREE.SSAOPass(scene, camera, innerWidth, innerHeight);
+    ssaoPass.kernelRadius = 1.1; ssaoPass.minDistance = 0.0015; ssaoPass.maxDistance = 0.12;
+    composer.addPass(ssaoPass);
+  }
+  // Bloom — only genuinely bright things (sky, neon, lamps) glow.
+  if (THREE.UnrealBloomPass) {
+    bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.7, 0.92);
+    composer.addPass(bloomPass);
+  }
+  // FXAA — cheap edge anti-aliasing as the final present pass.
+  if (THREE.FXAAShader) {
+    fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
+    composer.addPass(fxaaPass);
+  }
+}
+function sizeComposer() {
+  if (!composer) return;
+  const w = innerWidth, h = innerHeight, dpr = Math.min(devicePixelRatio, 2);
+  composer.setSize(w, h);
+  if (ssaoPass) ssaoPass.setSize(w, h);
+  if (bloomPass) bloomPass.setSize(w, h);
+  if (fxaaPass) fxaaPass.material.uniforms["resolution"].value.set(1 / (w * dpr), 1 / (h * dpr));
+}
+World._ppOn = () => ppOn && !!composer;
 
 /* ======================================================================== */
 World.start = function () {
@@ -1242,7 +1278,7 @@ function loop() {
 
   if (toastTimer > 0) { toastTimer -= dt; if (toastTimer <= 0) document.getElementById("toast").textContent = ""; }
 
-  renderer.render(scene, camera);
+  if (ppOn && composer) composer.render(); else renderer.render(scene, camera);
 }
 
 function updateMovement(dt) {

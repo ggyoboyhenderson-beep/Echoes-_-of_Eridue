@@ -117,9 +117,14 @@ All art is original and generated from code — no external or copyrighted asset
 - **Lighting & realism**: normal-mapped surfaces, PCF soft shadows, a gradient
   sky with sun/moon and stars, image-based reflections from a procedural cube
   environment map (metal, marble, glass), and a cinematic vignette + film-grain
-  grade. It is a stylized, art-directed look — not literal photorealism, which a
-  self-contained, no-asset, in-browser engine can't reach — but every surface is
-  lit and reflective rather than flat.
+  grade.
+- **Post-processing pipeline** (the same *technique families* AAA engines use,
+  in-browser via Three.js EffectComposer): **SSAO** ambient occlusion, **bloom**
+  on genuine highlights, **FXAA** anti-aliasing, and ACES filmic tone mapping.
+  Toggle it with **P**. It is a stylized, art-directed *cinematic* look — not
+  literal photorealism, which would need photogrammetry assets and a native
+  renderer a self-contained no-asset browser game can't ship — but the scene is
+  now occluded, bloomed, anti-aliased, and tone-mapped rather than flat-lit.
 
 ## Design fidelity
 
