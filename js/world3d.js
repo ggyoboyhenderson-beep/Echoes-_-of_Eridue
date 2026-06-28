@@ -112,7 +112,7 @@ function box(w, h, d, color, x, y, z, opts = {}) {
   };
   // Apply a tinted detail texture + normal map to surfaces — skip glow accents.
   const kind = opts.tex !== undefined ? opts.tex : currentBuildKind;
-  const glowing = opts.emissive && (opts.ei ?? 1) >= 0.8;
+  const glowing = opts.emissive && (opts.ei ?? 1) >= 0.8 && !opts.emissiveMap;
   if (kind && Art && !glowing) {
     const rw = Math.max(1, Math.round((w + d) / 3));
     const rh = Math.max(1, Math.round(h / 2.2));
@@ -120,9 +120,12 @@ function box(w, h, d, color, x, y, z, opts = {}) {
     matOpts.normalMap = Art.detailNormal(kind, rw, rh);
     matOpts.normalScale = new THREE.Vector2(0.8, 0.8);
   }
+  if (opts.emissiveMap) { matOpts.emissiveMap = opts.emissiveMap; if (!matOpts.emissive) matOpts.emissive = 0xffffff; }
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial(matOpts));
   m.position.set(x, y, z);
-  if (!glowing) { m.castShadow = true; m.receiveShadow = true; }
+  // Only sizeable structures cast shadows (keeps the shadow pass cheap).
+  m.castShadow = !glowing && (w > 1.6 || h > 2.6 || d > 1.6);
+  m.receiveShadow = !glowing;
   scene.add(m);
   return m;
 }
@@ -134,6 +137,54 @@ function shadeHex(hex, f) {
   let r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
   const c = (v) => Math.max(0, Math.min(255, Math.round(v * f)));
   return (c(r) << 16) | (c(g) << 8) | c(b);
+}
+
+/* ---- prop toolkit (street furniture that makes a place feel inhabited) --- */
+function cyl(rt, rb, h, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 12), mat);
+  m.position.set(x, y, z); m.castShadow = h > 2.5; m.receiveShadow = true; scene.add(m); return m;
+}
+function lampPost(x, z, color, h) {
+  h = h || 2.6;
+  box(0.12, h, 0.12, 0x26242a, x, h / 2, z, { tex: null, rough: 0.5, metal: 0.5 });
+  box(0.26, 0.22, 0.26, color, x, h, z, { emissive: color, ei: 1.3, tex: null });
+  light(color, 5.5, x, h, z, 11);
+}
+function brazier(x, z) {
+  cyl(0.16, 0.22, 0.5, new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.8, metalness: 0.4 }), x, 0.25, z);
+  box(0.3, 0.22, 0.3, 0xff7a25, x, 0.62, z, { emissive: 0xff6a10, ei: 1.5, tex: null });
+  light(0xff7a30, 5, x, 0.9, z, 9);
+}
+function crate(x, z, s, kind) {
+  s = s || (0.6 + Math.random() * 0.4);
+  box(s, s, s, 0x6a5236, x, s / 2, z, { tex: kind || "plank", rough: 0.95 });
+}
+function barrel(x, z) {
+  const h = 0.85, r = 0.32;
+  cyl(r, r, h, new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.8, metalness: 0.2 }), x, h / 2, z);
+}
+function banner(x, z, color, w, h, y) {
+  box(w || 0.5, h || 1.6, 0.04, color, x, (y != null ? y : 2.7), z, { tex: "cloth", rough: 0.9 });
+}
+function wire(a, b, color) {
+  const dir = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]); const len = dir.length();
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, len, 5),
+    new THREE.MeshStandardMaterial({ color: color || 0x16140f, roughness: 0.8 }));
+  m.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  scene.add(m);
+}
+function windows(x, z, w, h, d, color, night, rnd) {
+  const ei = night ? 1.1 : 0.12;
+  const cols = Math.max(1, Math.floor(w / 0.9)), rows = Math.max(1, Math.floor(h / 1.6));
+  for (const fz of [d / 2 + 0.02, -d / 2 - 0.02]) {
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (rnd() > 0.62) continue;
+      const wx = x + (c - (cols - 1) / 2) * 0.9;
+      const wy = 1.4 + r * 1.6;
+      box(0.34, 0.6, 0.06, color, wx, wy, z + fz, { emissive: color, ei, tex: null });
+    }
+  }
 }
 
 /* Gradient sky dome, a sun or moon disc, and stars at night. */
@@ -237,7 +288,7 @@ World.buildDistrict = function (id, spawnCenter) {
 
   // era architecture (textured with the district's building surface)
   currentBuildKind = BUILD_TEX[id] || null;
-  theme.build(rnd);
+  theme.build(rnd, Engine.isNight(g));
   currentBuildKind = null;
 
   // night dimming + power outage flavour
@@ -297,21 +348,34 @@ const REACT = 7.5;        // distance at which a person notices and turns to you
 /* Build a humanoid from torso/head/limbs with varied proportions. */
 /* Shared low-poly primitives — rounded, not boxy. */
 const GEO = {
-  sphere: new THREE.SphereGeometry(1, 14, 12),
-  cyl: new THREE.CylinderGeometry(1, 1, 1, 14),     // unit, scaled per part
+  sphere: new THREE.SphereGeometry(1, 10, 8),
+  cyl: new THREE.CylinderGeometry(1, 1, 1, 12),     // unit, scaled per part
 };
+// soft round contact-shadow decal shared by all people
+let CONTACT_TEX = null;
+function contactShadow() {
+  if (!CONTACT_TEX) {
+    const c = document.createElement("canvas"); c.width = c.height = 64;
+    const x = c.getContext("2d"); const g = x.createRadialGradient(32, 32, 2, 32, 32, 30);
+    g.addColorStop(0, "rgba(0,0,0,0.5)"); g.addColorStop(1, "rgba(0,0,0,0)");
+    x.fillStyle = g; x.fillRect(0, 0, 64, 64); CONTACT_TEX = new THREE.CanvasTexture(c);
+  }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3),
+    new THREE.MeshBasicMaterial({ map: CONTACT_TEX, transparent: true, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.y = 0.02; return m;
+}
 function meshOf(geo, mat, shadow) {
   const m = new THREE.Mesh(geo, mat);
   if (shadow !== false) { m.castShadow = true; m.receiveShadow = true; }
   return m;
 }
-/* a tapered limb segment (cylinder) from radius rTop..rBot over length len */
+/* a tapered limb segment (cylinder) from radius rTop..rBot over length len.
+ * Human parts do not cast shadows individually (a contact shadow grounds them). */
 function limb(mat, rTop, rBot, len) {
-  const g = new THREE.CylinderGeometry(rTop, rBot, len, 12);
-  return meshOf(g, mat);
+  return meshOf(new THREE.CylinderGeometry(rTop, rBot, len, 10), mat, false);
 }
-function ball(mat, r) { const m = meshOf(GEO.sphere, mat); m.scale.setScalar(r); return m; }
-function ballE(mat, rx, ry, rz) { const m = meshOf(GEO.sphere, mat); m.scale.set(rx, ry, rz); return m; }
+function ball(mat, r) { const m = meshOf(GEO.sphere, mat, false); m.scale.setScalar(r); return m; }
+function ballE(mat, rx, ry, rz) { const m = meshOf(GEO.sphere, mat, false); m.scale.set(rx, ry, rz); return m; }
 
 function makeHuman(ap) {
   const grp = new THREE.Group();
@@ -386,6 +450,8 @@ function makeHuman(ap) {
   // hair: rounded cap + back volume
   const cap = ballE(hairM, 0.168, 0.168 * 0.85, 0.168); cap.position.set(0, 0.05, -0.01); head.add(cap);
   const hairBack = ballE(hairM, 0.15, 0.165, 0.105); hairBack.position.set(0, 0, -0.08); head.add(hairBack);
+
+  grp.add(contactShadow());
 
   // overall scale for tall/short
   let s = 1; if (ap.build === "tall") s = 1.16; if (ap.build === "short") s = 0.84;
@@ -582,15 +648,24 @@ const THEMES = {
     sky: 0x3a2c1c, ground: 0xb59668, wall: 0x8a6e4a, wallH: 7,
     fogNear: 18, fogFar: 90, hemiSky: 0xffe0b0, hemiGround: 0x5a4530, hemiInt: 0.7,
     sun: 0xffd9a0, sunInt: 1.1,
-    build(rnd) {
-      // central stepped ziggurat
-      const tiers = 6; let w = 16;
+    build(rnd, night) {
+      // central stepped ziggurat with a front stair
+      const tiers = 7; let w = 18;
       for (let i = 0; i < tiers; i++) {
         box(w, 1.6, w, i % 2 ? 0x9a7a52 : 0x8a6e4a, 0, 0.8 + i * 1.6, 0, { rough: 1 });
+        box(2.6, 1.6, (w / 2) + 0.6, 0x7a6042, 0, 0.8 + i * 1.6, w / 2 - 1, { rough: 1 }); // stair spine
         w -= 2.2;
       }
-      box(3, 2, 3, 0xc89a55, 0, tiers * 1.6 + 1, 0, { emissive: 0x402a10, ei: 0.6 });
-      light(0xffcf80, 10, 0, tiers * 1.6 + 2, 0, 40);
+      box(3.2, 2.4, 3.2, 0xc89a55, 0, tiers * 1.6 + 1.2, 0, { emissive: 0x6a4a18, ei: 0.5 });
+      light(0xffcf80, 9, 0, tiers * 1.6 + 2, 0, 42);
+      // braziers up the approach + banners + offering crates
+      for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + 0.3, r = 13; brazier(Math.cos(a) * r, Math.sin(a) * r); }
+      for (let i = 0; i < 10; i++) {
+        const x = (rnd() - 0.5) * 46, z = (rnd() - 0.5) * 46; if (Math.hypot(x, z) < 14) continue;
+        if (rnd() > 0.5) banner(x, z, [0x9a2a2a, 0x2a4a8a, 0xc8a050][(rnd() * 3) | 0], 0.5, 2.0, 3);
+        else crate(x, z, 0.7, "brick");
+      }
+      for (let i = 0; i < 4; i++) brazier((rnd() - 0.5) * 40, (rnd() - 0.5) * 40);
     },
   },
   hanging_market: {
@@ -598,17 +673,30 @@ const THEMES = {
     sky: 0x2a2418, ground: 0x9a8458, wall: 0x6a5838, wallH: 6,
     fogNear: 16, fogFar: 80, hemiSky: 0xffe6b8, hemiGround: 0x4a3c28, hemiInt: 0.7,
     sun: 0xffdca0, sunInt: 0.9,
-    build(rnd) {
-      // terraced platforms + colourful stalls
-      for (let t = 0; t < 3; t++) {
+    build(rnd, night) {
+      // terraced platforms
+      for (let t = 0; t < 3; t++)
         box(40 - t * 8, 1, 40 - t * 8, t % 2 ? 0x7a6444 : 0x6a5838, 0, 0.5 + t, 0, { rough: 1 });
+      const cols = [0xb0452b, 0x2b7ab0, 0x2bb06a, 0xb0962b, 0x7a2bb0, 0xc86a2a];
+      // dense market stalls: counter + canopy + goods + an awning post
+      for (let i = 0; i < 46; i++) {
+        const x = (rnd() - 0.5) * 46, z = (rnd() - 0.5) * 46;
+        if (Math.hypot(x, z) < 12) continue;
+        const c = cols[(rnd() * cols.length) | 0];
+        box(1.9, 1.0, 1.2, 0x6a513a, x, 0.5, z, { tex: "plank", rough: 0.9 });   // counter
+        box(2.3, 0.16, 1.7, c, x, 1.9, z, { tex: "cloth", rough: 0.85 });          // canopy
+        box(0.1, 1.9, 0.1, 0x4a3a28, x - 1, 0.95, z - 0.7, { tex: null });          // posts
+        box(0.1, 1.9, 0.1, 0x4a3a28, x + 1, 0.95, z + 0.7, { tex: null });
+        for (let gj = 0; gj < 3; gj++)                                              // goods on the counter
+          box(0.3, 0.3, 0.3, cols[(rnd() * cols.length) | 0], x - 0.6 + gj * 0.6, 1.15, z, { tex: null, rough: 0.7 });
+        if (rnd() > 0.6) crate(x + (rnd() - 0.5) * 2, z + (rnd() - 0.5) * 2, 0.6, "plank");
+        if (rnd() > 0.7) barrel(x + (rnd() - 0.5) * 2, z + (rnd() - 0.5) * 2);
       }
-      const cols = [0xb0452b, 0x2b7ab0, 0x2bb06a, 0xb0962b, 0x7a2bb0];
-      for (let i = 0; i < 24; i++) {
-        const x = (rnd() - 0.5) * 44, z = (rnd() - 0.5) * 44;
-        if (Math.hypot(x, z) < 13) continue;
-        box(1.6, 1.6, 1.6, cols[(rnd() * cols.length) | 0], x, 0.8 + 3, z, { rough: 0.8 });
-        box(2.2, 0.2, 2.2, 0xcfa86a, x, 2 + 3, z); // awning
+      // hanging banners and lamps strung over the lanes
+      for (let i = 0; i < 14; i++) {
+        const x = (rnd() - 0.5) * 44, z = (rnd() - 0.5) * 44; if (Math.hypot(x, z) < 12) continue;
+        if (rnd() > 0.5) banner(x, z, cols[(rnd() * cols.length) | 0], 0.5, 1.4, 3.4);
+        else lampPost(x, z, 0xffcf80, 3);
       }
     },
   },
@@ -617,15 +705,27 @@ const THEMES = {
     sky: 0x161a22, ground: 0x3a3a44, wall: 0x2a2c34, wallH: 9,
     fogNear: 10, fogFar: 60, hemiSky: 0x9aa6c0, hemiGround: 0x202028, hemiInt: 0.4,
     sun: 0x8090b0, sunInt: 0.4,
-    build(rnd) {
-      // ring of tall columns + central glowing altar
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2, r = 17;
-        box(1.4, 14, 1.4, 0x3a3c46, Math.cos(a) * r, 7, Math.sin(a) * r, { rough: 1 });
+    build(rnd, night) {
+      // two concentric colonnades with capitals + bases
+      for (const [n, r, h] of [[12, 17, 14], [16, 23, 11]]) {
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2, x = Math.cos(a) * r, z = Math.sin(a) * r;
+          box(1.6, 0.5, 1.6, 0x4a4c58, x, 0.25, z, { tex: "stone" });             // base
+          cyl(0.6, 0.7, h, new THREE.MeshStandardMaterial({ color: 0x3a3c46, roughness: 1, map: Art && Art.detail("stone", 1, 4), normalMap: Art && Art.detailNormal("stone", 1, 4) }), x, h / 2 + 0.5, z);
+          box(1.5, 0.6, 1.5, 0x44464f, x, h + 0.6, z, { tex: "stone" });           // capital
+        }
       }
-      box(4, 1, 4, 0x4a4c58, 0, 0.5, 0, {});
-      const altar = box(2, 2, 2, 0xe6b450, 0, 2, 0, { emissive: 0xe6b450, ei: 0.8 });
-      light(0xffd070, 9, 0, 3.5, 0, 22);
+      // raised dais + glowing altar + flanking braziers + standing statues
+      box(6, 1, 6, 0x4a4c58, 0, 0.5, 0, { tex: "stone" });
+      box(2, 2, 2, 0xe6b450, 0, 2, 0, { emissive: 0xe6b450, ei: 0.85, tex: null });
+      light(0xffd070, 10, 0, 3.5, 0, 24);
+      brazier(-4, 4); brazier(4, 4); brazier(-4, -4); brazier(4, -4);
+      for (let i = 0; i < 6; i++) {                                                // idol statues
+        const a = i * Math.PI / 3 + 0.5, r = 11, x = Math.cos(a) * r, z = Math.sin(a) * r;
+        box(1, 0.5, 1, 0x52535c, x, 0.25, z, { tex: "stone" });
+        box(0.7, 2.2, 0.5, 0x5a5b64, x, 1.6, z, { tex: "stone" });
+        box(0.5, 0.5, 0.5, 0x62636c, x, 2.95, z, { tex: "stone" });
+      }
     },
   },
   ironwall: {
@@ -633,18 +733,25 @@ const THEMES = {
     sky: 0x1c1c1e, ground: 0x44423e, wall: 0x33312e, wallH: 12,
     fogNear: 12, fogFar: 55, hemiSky: 0x9a9690, hemiGround: 0x222020, hemiInt: 0.35,
     sun: 0xb0a890, sunInt: 0.4,
-    build(rnd) {
-      // tall fortified blocks + corner towers, oppressive
-      for (let i = 0; i < 5; i++) {
-        const x = (rnd() - 0.5) * 36, z = (rnd() - 0.5) * 36;
-        if (Math.hypot(x, z) < 12) continue;
-        const h = 8 + rnd() * 8;
-        box(5, h, 5, 0x35332f, x, h / 2, z, { rough: 1 });
-        // narrow second-storey window slits (emissive)
-        box(0.3, 0.8, 0.3, 0x4a3520, x, h * 0.6, z + 2.6, { emissive: 0xff7a30, ei: 0.6 });
+    build(rnd, night) {
+      // tall fortified blocks with crenellations and arrow-slits
+      for (let i = 0; i < 10; i++) {
+        const x = (rnd() - 0.5) * 38, z = (rnd() - 0.5) * 38;
+        if (Math.hypot(x, z) < 11) continue;
+        const w = 4 + rnd() * 2.5, h = 8 + rnd() * 9;
+        box(w, h, w, 0x35332f, x, h / 2, z, { rough: 1 });
+        for (let m = 0; m < 4; m++) box(w / 4, 0.7, 0.5, 0x2e2c29, x - w / 2 + 0.5 + m * (w / 4), h + 0.35, z + w / 2, { tex: "concrete" }); // merlons
+        for (let s = 0; s < 3; s++) box(0.25, 0.9, 0.3, 0x140e08, x, 2 + s * 2.2, z + w / 2 + 0.01, { emissive: 0xff7a30, ei: night ? 0.8 : 0.2, tex: null }); // arrow-slits
       }
-      for (const [sx, sz] of [[-22, -22], [22, -22], [-22, 22], [22, 22]])
-        box(4, 16, 4, 0x2e2c29, sx, 8, sz, { rough: 1 });
+      // corner keeps with battlements + braziers atop
+      for (const [sx, sz] of [[-22, -22], [22, -22], [-22, 22], [22, 22]]) {
+        box(4.4, 17, 4.4, 0x2e2c29, sx, 8.5, sz, { rough: 1 });
+        for (let m = 0; m < 4; m++) box(1, 0.8, 1, 0x262420, sx - 1.4 + (m % 2) * 2.8, 17.4, sz - 1.4 + ((m / 2) | 0) * 2.8, { tex: "concrete" });
+        brazier(sx, sz + 3);
+      }
+      // ground clutter: crates, barrels, chains between keeps
+      for (let i = 0; i < 10; i++) { const x = (rnd() - 0.5) * 40, z = (rnd() - 0.5) * 40; if (Math.hypot(x, z) < 9) continue; rnd() > 0.5 ? crate(x, z, 0.8, "concrete") : barrel(x, z); }
+      wire([-22, 12, -22], [22, 12, -22], 0x14120e); wire([-22, 12, 22], [22, 12, 22], 0x14120e);
     },
   },
   broken_crown: {
@@ -652,18 +759,33 @@ const THEMES = {
     sky: 0x241c16, ground: 0x4a3e30, wall: 0x3a3026, wallH: 6,
     fogNear: 14, fogFar: 65, hemiSky: 0xd0b088, hemiGround: 0x2a2018, hemiInt: 0.6,
     sun: 0xffc080, sunInt: 0.6,
-    build(rnd) {
-      // organic stacked shanties + cookfire lights
-      const cols = [0x6a5236, 0x7a5a3a, 0x5a4a3a, 0x8a6a44];
-      for (let i = 0; i < 40; i++) {
-        const x = (rnd() - 0.5) * 46, z = (rnd() - 0.5) * 46;
-        if (Math.hypot(x, z) < 9) continue;
-        const stack = 1 + ((rnd() * 3) | 0);
+    build(rnd, night) {
+      // organic stacked shanties, salvage roofs, cookfires
+      const cols = [0x6a5236, 0x7a5a3a, 0x5a4a3a, 0x8a6a44, 0x6a5a4a];
+      const laundry = [0x9a3a3a, 0x3a6a8a, 0x8a8a4a, 0xa06a3a, 0x4a7a5a];
+      const tops = [];
+      for (let i = 0; i < 54; i++) {
+        const x = (rnd() - 0.5) * 48, z = (rnd() - 0.5) * 48;
+        if (Math.hypot(x, z) < 8) continue;
+        const stack = 1 + ((rnd() * 3) | 0); let topY = 0;
         for (let s = 0; s < stack; s++) {
-          const sz = 2 + rnd() * 1.5;
-          box(sz, 2, sz, cols[(rnd() * cols.length) | 0], x + (rnd() - 0.5), 1 + s * 2, z + (rnd() - 0.5), { rough: 1 });
+          const sz = 1.8 + rnd() * 1.6, hh = 1.8 + rnd() * 0.6;
+          box(sz, hh, sz, cols[(rnd() * cols.length) | 0], x + (rnd() - 0.5), topY + hh / 2, z + (rnd() - 0.5), { rough: 1 });
+          topY += hh;
+          if (rnd() > 0.5) box(sz + 0.5, 0.1, sz + 0.5, 0x3a3630, x, topY + 0.05, z, { tex: "panel", metal: 0.4 }); // tin roof
         }
-        if (rnd() > 0.7) light(0xff8030, 3, x, 1.5, z, 7); // cookfire
+        if (rnd() > 0.55) { light(0xff8030, 2.6, x, 1.4, z, 7); box(0.4, 0.3, 0.4, 0xff7a25, x, 0.3, z, { emissive: 0xff6a10, ei: 1.4, tex: null }); }
+        if (rnd() > 0.7) crate(x + 1.5, z, 0.6);
+        if (rnd() > 0.8) barrel(x - 1.5, z);
+        if (topY > 2) tops.push([x, topY, z]);
+      }
+      // cables + laundry strung between rooftops
+      for (let i = 0; i + 1 < tops.length && i < 26; i += 2) {
+        const a = tops[i], b = tops[(i + 3) % tops.length];
+        if (Math.hypot(a[0] - b[0], a[2] - b[2]) > 14) continue;
+        wire(a, b, 0x14110c);
+        const mx = (a[0] + b[0]) / 2, mz = (a[2] + b[2]) / 2, my = Math.min(a[1], b[1]) - 0.3;
+        if (rnd() > 0.4) banner(mx, mz, laundry[(rnd() * laundry.length) | 0], 0.4, 0.6, my);
       }
     },
   },
@@ -672,19 +794,31 @@ const THEMES = {
     sky: 0x0a0a12, ground: 0x14141c, wall: 0x1a1a26, wallH: 16,
     fogNear: 10, fogFar: 55, hemiSky: 0x303048, hemiGround: 0x08080c, hemiInt: 0.3,
     sun: 0x4040a0, sunInt: 0.25,
-    build(rnd) {
-      const neon = [0x38d0c8, 0xff5c7a, 0xc850ff, 0x50ff9a, 0xffd23a];
-      for (let i = 0; i < 18; i++) {
-        const x = (rnd() - 0.5) * 46, z = (rnd() - 0.5) * 46;
-        if (Math.hypot(x, z) < 10) continue;
-        const h = 10 + rnd() * 18;
-        box(4, h, 4, 0x16161f, x, h / 2, z, { rough: 0.5, metal: 0.3 });
+    build(rnd, night) {
+      const neon = [0x38d0c8, 0xff5c7a, 0xc850ff, 0x50ff9a, 0xffd23a, 0x40a0ff];
+      const tops = [];
+      for (let i = 0; i < 22; i++) {
+        const x = (rnd() - 0.5) * 48, z = (rnd() - 0.5) * 48;
+        if (Math.hypot(x, z) < 9) continue;
+        const w = 3.4 + rnd() * 2.2, h = 9 + rnd() * 20;
         const c = neon[(rnd() * neon.length) | 0];
-        // vertical neon strips
-        box(0.3, h * 0.8, 0.3, c, x + 2.1, h / 2, z, { emissive: c, ei: 1.4 });
-        box(0.3, 0.3, 4.2, c, x, h * (0.3 + rnd() * 0.5), z, { emissive: c, ei: 1.2 });
-        if (rnd() > 0.5) light(c, 5, x, h * 0.5, z, 14);
+        const win = Art && Art.windowTex(c, true, i * 7 + 1);                     // baked lit windows
+        const tower = box(w, h, w, 0x16161f, x, h / 2, z, { rough: 0.5, metal: 0.35, emissiveMap: win, emissive: 0xffffff, ei: 0.9 });
+        if (win) { tower.material.emissiveMap.repeat.set(Math.max(1, Math.round(w / 3)), Math.max(1, Math.round(h / 5))); }
+        box(0.28, h * 0.85, 0.28, c, x + w / 2 + 0.05, h / 2, z, { emissive: c, ei: 1.5, tex: null }); // edge strip
+        box(0.28, h * 0.85, 0.28, c, x - w / 2 - 0.05, h / 2, z, { emissive: c, ei: 1.5, tex: null });
+        const sc = neon[(rnd() * neon.length) | 0];
+        box(0.1, 1.6, 1.4, sc, x + w / 2 + 0.2, h * (0.4 + rnd() * 0.4), z, { emissive: sc, ei: 1.4, tex: null }); // holo sign
+        if (rnd() > 0.5) light(c, 5, x, h * 0.5, z, 16);
+        tops.push([x, h, z, c]);
       }
+      // sagging power/data cables between towers
+      for (let i = 0; i + 1 < tops.length && i < 30; i++) {
+        const a = tops[i], b = tops[(i + 2) % tops.length];
+        if (Math.hypot(a[0] - b[0], a[2] - b[2]) > 16) continue;
+        wire([a[0], a[1] * 0.7, a[2]], [b[0], b[1] * 0.7, b[2]], 0x0c0c12);
+      }
+      for (let i = 0; i < 8; i++) lampPost((rnd() - 0.5) * 44, (rnd() - 0.5) * 44, neon[(rnd() * neon.length) | 0], 3.2);
     },
   },
   spire: {
@@ -692,14 +826,21 @@ const THEMES = {
     sky: 0x9ab0c8, ground: 0xc8ccd2, wall: 0xdfe4ea, wallH: 14,
     fogNear: 30, fogFar: 140, hemiSky: 0xffffff, hemiGround: 0x90a0b0, hemiInt: 0.9,
     sun: 0xffffff, sunInt: 1.4,
-    build(rnd) {
-      // clean tall glass towers, sterile
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2, r = 16 + rnd() * 4;
-        const x = Math.cos(a) * r, z = Math.sin(a) * r, h = 26 + rnd() * 20;
-        box(5, h, 5, 0xeaf0f6, x, h / 2, z, { rough: 0.1, metal: 0.6, emissive: 0x223344, ei: 0.15 });
+    build(rnd, night) {
+      // clean tall glass towers with baked, lit window grids
+      for (let i = 0; i < 11; i++) {
+        const a = (i / 11) * Math.PI * 2, r = 15 + rnd() * 7;
+        const x = Math.cos(a) * r, z = Math.sin(a) * r, w = 4.5 + rnd() * 2, h = 24 + rnd() * 24;
+        const win = Art && Art.windowTex(0xbfe2ff, night, i * 9 + 3);
+        const tower = box(w, h, w, 0xeaf0f6, x, h / 2, z, { rough: 0.12, metal: 0.65, emissiveMap: win, emissive: 0xffffff, ei: night ? 0.85 : 0.3 });
+        if (win) tower.material.emissiveMap.repeat.set(Math.max(1, Math.round(w / 3)), Math.max(2, Math.round(h / 5)));
+        box(0.3, 2, 0.3, 0xcfe0ee, x, h + 1, z, { emissive: 0x88c0ff, ei: night ? 1.2 : 0.4, tex: null }); // beacon
       }
-      box(8, 1, 8, 0xf0f4f8, 0, 0.5, 0, { metal: 0.4, rough: 0.2 });
+      // central monument + reflecting plaza + planters
+      box(10, 1, 10, 0xf0f4f8, 0, 0.5, 0, { metal: 0.4, rough: 0.15 });
+      box(1.2, 9, 1.2, 0xdfe8f0, 0, 5, 0, { metal: 0.6, rough: 0.1, emissive: 0x4a6a8a, ei: 0.3 });
+      box(2.4, 0.6, 2.4, 0xe6eef4, 0, 9.3, 0, { metal: 0.7, rough: 0.1, emissive: 0x88c0ff, ei: 0.6, tex: null });
+      for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3, r = 7; box(1.4, 0.8, 1.4, 0xd8e2ea, Math.cos(a) * r, 0.4, Math.sin(a) * r, { tex: "panel", metal: 0.3 }); box(1, 1, 1, 0x2a5a3a, Math.cos(a) * r, 1.2, Math.sin(a) * r, { tex: null, rough: 1 }); }
     },
   },
   sub_strata: {
@@ -707,21 +848,33 @@ const THEMES = {
     sky: 0x05070a, ground: 0x171c18, wall: 0x12161a, wallH: 5,
     fogNear: 6, fogFar: 34, hemiSky: 0x16301f, hemiGround: 0x05080a, hemiInt: 0.35,
     sun: 0x103018, sunInt: 0.15,
-    build(rnd) {
-      // low ceiling + pillars + bioluminescent points
+    build(rnd, night) {
+      // low vaulted ceiling + dense pillars + arches + bioluminescence + pipes
       const ceil = new THREE.Mesh(
         new THREE.PlaneGeometry(BOUND * 2 + 8, BOUND * 2 + 8),
-        new THREE.MeshStandardMaterial({ color: 0x0c100e, roughness: 1 })
+        new THREE.MeshStandardMaterial({ color: 0x0c100e, roughness: 1, map: Art && Art.detail("stone", 8, 8), normalMap: Art && Art.detailNormal("stone", 8, 8) })
       );
-      ceil.rotation.x = Math.PI / 2; ceil.position.y = 6; scene.add(ceil);
-      for (let i = 0; i < 24; i++) {
-        const x = (rnd() - 0.5) * 48, z = (rnd() - 0.5) * 48;
-        if (Math.hypot(x, z) < 7) continue;
-        box(1.4, 6, 1.4, 0x14181c, x, 3, z, { rough: 1 });
-        if (rnd() > 0.4) {
-          const fung = box(0.5, 0.5, 0.5, 0x4dff9a, x, 1 + rnd() * 4, z + 0.9, { emissive: 0x4dff9a, ei: 1.6 });
-          light(0x4dff9a, 2.2, x, fung.position.y, z + 0.9, 6);
+      ceil.rotation.x = Math.PI / 2; ceil.position.y = 6; ceil.receiveShadow = true; scene.add(ceil);
+      const pillars = [];
+      for (let i = 0; i < 40; i++) {
+        const x = (rnd() - 0.5) * 50, z = (rnd() - 0.5) * 50;
+        if (Math.hypot(x, z) < 6) continue;
+        box(1.3, 6, 1.3, 0x14181c, x, 3, z, { tex: "stone" });
+        box(1.7, 0.5, 1.7, 0x181c20, x, 5.7, z, { tex: "stone" });          // capital meeting the vault
+        pillars.push([x, z]);
+        const n = (rnd() * 3) | 0;
+        for (let f = 0; f < n; f++) {                                        // fungus clusters
+          const fy = 0.5 + rnd() * 4.5, fx = x + (rnd() - 0.5) * 1.4, fz = z + (rnd() - 0.5) * 1.4;
+          box(0.3 + rnd() * 0.3, 0.3, 0.3 + rnd() * 0.3, 0x4dff9a, fx, fy, fz, { emissive: 0x4dff9a, ei: 1.7, tex: null });
+          if (rnd() > 0.5) light(0x4dff9a, 2, fx, fy, fz, 6);
         }
+        if (rnd() > 0.7) crate(x + 1.4, z, 0.6, "concrete");
+      }
+      // stolen pipes/cables running between pillars under the ceiling
+      for (let i = 0; i + 1 < pillars.length && i < 24; i += 2) {
+        const a = pillars[i], b = pillars[(i + 5) % pillars.length];
+        if (Math.hypot(a[0] - b[0], a[1] - b[1]) > 13) continue;
+        wire([a[0], 5.4, a[1]], [b[0], 5.4, b[1]], 0x223026);
       }
     },
   },

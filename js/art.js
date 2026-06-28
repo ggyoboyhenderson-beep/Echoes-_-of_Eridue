@@ -284,6 +284,23 @@ Art.sigil = function (faction) {
   }
 };
 
+/* Emissive window grid baked to a texture — one mesh per tower, not dozens. */
+Art._winCache = {};
+Art.windowTex = function (litColor, night, seed) {
+  const key = `${litColor}|${night ? 1 : 0}|${seed}`;
+  if (Art._winCache[key]) return Art._winCache[key];
+  const S = 128, c = document.createElement("canvas"); c.width = c.height = S;
+  const x = c.getContext("2d"); const rnd = _rng((seed || 1) * 131 + 5);
+  x.fillStyle = "#06060a"; x.fillRect(0, 0, S, S);
+  const cols = 6, rows = 8, mw = S / cols, mh = S / rows, litP = night ? 0.6 : 0.26;
+  for (let r = 0; r < rows; r++) for (let cc = 0; cc < cols; cc++) {
+    x.fillStyle = rnd() < litP ? _css(litColor, 0.75 + rnd() * 0.25) : "rgba(16,16,24,1)";
+    x.fillRect(cc * mw + mw * 0.2, r * mh + mh * 0.18, mw * 0.6, mh * 0.62);
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  Art._winCache[key] = t; return t;
+};
+
 /* The title glyph: a stepped ancient base rising into a thin modern spire. */
 Art.logo = function () {
   return `<svg viewBox="0 0 120 90" fill="none" xmlns="http://www.w3.org/2000/svg">
