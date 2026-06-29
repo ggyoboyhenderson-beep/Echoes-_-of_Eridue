@@ -21,6 +21,7 @@ let renderer, scene, camera, clock;
 let composer, ssaoPass, bloomPass, fxaaPass, ppOn = true;
 let yaw = 0, pitch = 0;
 let dragging = false, dragX = 0, dragY = 0; // cursor-free drag-to-look
+let freeCam = false;                         // dev-only detached camera (verification)
 const keys = {};
 const player = { pos: new THREE.Vector3(0, 1.7, 18), vel: new THREE.Vector3() };
 let interactables = [];   // {pos, radius, label, type, run}
@@ -523,11 +524,57 @@ function detailHouse(x, z, w, h, era, night, isOffice) {
   if (night) light(winColor, 3, x, 2.0, z + w / 2 + 0.4, 6);                                 // porch light
 }
 
+// The lane grid shared by the roads and the cars that drive on them, so the
+// painted arrows always agree with which way traffic is moving.
+function laneGrid() {
+  const lanes = [];
+  for (let k = -3; k <= 3; k++) {
+    if (!k) continue;
+    lanes.push({ axis: "x", fixed: k * 6.6, dir: k % 2 ? 1 : -1 });
+    lanes.push({ axis: "z", fixed: k * 6.6, dir: k % 2 ? -1 : 1 });
+  }
+  return lanes;
+}
+const TRAFFIC_COUNT = { neon_labyrinth: 200, spire: 130, hanging_market: 170,
+  ironwall: 130, broken_crown: 170, ziggurat_crown: 50, god_quarter: 0, sub_strata: 0 };
+
+/* Visible streets: a grid of asphalt lanes with edge lines, dashed centres, and
+ * direction chevrons, plus a perimeter ring road under the circling vehicles. */
+function buildRoads(id) {
+  if (!Art || !Art.roadTex) return;
+  const cnt = TRAFFIC_COUNT[id] != null ? TRAFFIC_COUNT[id] : 90;
+  if (!cnt) return;                                  // quiet districts get no streets
+  const len = BOUND * 2, segs = Math.max(2, Math.round(len / 7));
+  for (const ln of laneGrid()) {
+    const horizontal = ln.axis === "x";
+    const reverse = horizontal ? ln.dir < 0 : ln.dir > 0;
+    const tex = Art.roadTex(horizontal, reverse);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    if (horizontal) tex.repeat.set(segs, 1); else tex.repeat.set(1, segs);
+    const mat = new THREE.MeshStandardMaterial({
+      map: tex, emissiveMap: tex, emissive: 0xffffff, emissiveIntensity: 0.14,
+      roughness: 0.92, metalness: 0.0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    });
+    const geo = horizontal ? new THREE.PlaneGeometry(len, 3.7) : new THREE.PlaneGeometry(3.7, len);
+    const m = new THREE.Mesh(geo, mat); m.rotation.x = -Math.PI / 2; m.receiveShadow = true;
+    if (horizontal) m.position.set(0, 0.02, ln.fixed); else m.position.set(ln.fixed, 0.02, 0);
+    scene.add(m);
+  }
+  // perimeter ring road for the hero vehicles that circle the plot
+  const ring = new THREE.Mesh(new THREE.RingGeometry(BOUND - 7, BOUND - 0.6, 56),
+    new THREE.MeshStandardMaterial({ color: 0x1b1b20, roughness: 0.92, metalness: 0, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.012; ring.receiveShadow = true; scene.add(ring);
+  for (const rr of [BOUND - 5.2, BOUND - 2.6]) {     // faint lane lines on the ring
+    const ln = new THREE.Mesh(new THREE.RingGeometry(rr - 0.07, rr + 0.07, 72),
+      new THREE.MeshBasicMaterial({ color: 0xc9c4a6, transparent: true, opacity: 0.5 }));
+    ln.rotation.x = -Math.PI / 2; ln.position.y = 0.03; scene.add(ln);
+  }
+}
+
 /* Hundreds of cars on a street grid, one InstancedMesh, per-instance colour. */
 function buildGroundTraffic(id, night) {
   cityTraffic = null; cityTrafficData = [];
-  const n = { neon_labyrinth: 200, spire: 130, hanging_market: 170, ironwall: 130,
-    broken_crown: 170, ziggurat_crown: 50, god_quarter: 0, sub_strata: 0 }[id];
+  const n = TRAFFIC_COUNT[id];
   const count = n != null ? n : 90;
   if (!count) return;
   const geo = new THREE.BoxGeometry(1.5, 0.6, 3.0);
@@ -535,9 +582,8 @@ function buildGroundTraffic(id, night) {
   const im = new THREE.InstancedMesh(geo, mat, count);
   im.frustumCulled = false; im.castShadow = false;
   const cols = [0x8a2a2a, 0x2a4a8a, 0x2a8a5a, 0xc8a030, 0x222228, 0x8a3a6a, 0xb0b4bc, 0x30384a, 0xc86a2a];
-  // a grid of one-way lanes
-  const lanes = [];
-  for (let k = -3; k <= 3; k++) { if (!k) continue; lanes.push({ axis: "x", fixed: k * 6.6, dir: k % 2 ? 1 : -1 }); lanes.push({ axis: "z", fixed: k * 6.6, dir: k % 2 ? -1 : 1 }); }
+  // the same one-way lane grid the painted roads use
+  const lanes = laneGrid();
   const c = new THREE.Color();
   for (let i = 0; i < count; i++) {
     const lane = lanes[i % lanes.length];
@@ -753,6 +799,7 @@ World.buildDistrict = function (id, spawnCenter) {
   spawnPeople(g, id, rnd);
   spawnTraffic(id, Engine.isNight(g));
   if (id !== "sub_strata") buildSurroundCity(theme, Engine.isNight(g));
+  buildRoads(id);
   buildGroundTraffic(id, Engine.isNight(g));
 
   // a few enterable buildings at the walls — the reachable edge of the city
@@ -1630,6 +1677,7 @@ World._pos = () => [+player.pos.x.toFixed(2), +player.pos.z.toFixed(2)];
 World._keyDown = (c) => !!keys[c];
 World._tp = (x, z, y) => { player.pos.set(x, 1.7, z); if (y !== undefined) yaw = y; };
 World._pokeSocial = () => { for (const a of agents) if (!a.partner) a.socialCD = 0; };
+World._freecam = (x, y, z, yw, pt) => { freeCam = true; player.pos.set(x, y, z); yaw = yw; pitch = pt; };
 World._agentStates = () => agents.map((a) => a.state);
 World._vehicles = () => vehicles.map((v) => [v.grp.position.x.toFixed(1), v.grp.position.z.toFixed(1), v.kind || (v.drone ? "drone" : "?")]);
 World._cityCars = () => cityTrafficData.length;
@@ -2171,6 +2219,7 @@ function updateLook(dt) {
 }
 
 function updateMovement(dt) {
+  if (freeCam) return;          // detached camera holds its position
   const speed = 8;
   const f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
   const s = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);

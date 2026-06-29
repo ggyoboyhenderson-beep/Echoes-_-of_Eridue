@@ -325,6 +325,40 @@ Art.windowTex = function (litColor, night, seed) {
   Art._winCache[key] = t; return t;
 };
 
+/* A tiling road texture: asphalt, edge lines, a dashed centre line, and a
+ * direction chevron. `horizontal` lays the lane along X (else Z); `reverse`
+ * flips the arrow so it points the way the traffic actually travels. */
+Art._roadCache = {};
+Art.roadTex = function (horizontal, reverse) {
+  const key = (horizontal ? "h" : "v") + (reverse ? "r" : "f");
+  if (Art._roadCache[key]) return Art._roadCache[key];
+  const S = 128, c = document.createElement("canvas"); c.width = c.height = S;
+  const x = c.getContext("2d");
+  x.fillStyle = "#1b1b20"; x.fillRect(0, 0, S, S);                       // asphalt
+  for (let i = 0; i < 150; i++) {                                        // speckle
+    const v = 36 + (Math.random() * 34 | 0);
+    x.fillStyle = `rgba(${v},${v},${v + 6},0.5)`; x.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+  }
+  const arrow = (cx, cy) => {                                            // chevron, points "up"
+    x.strokeStyle = "rgba(245,245,235,0.92)"; x.lineWidth = 5; x.lineCap = "round"; x.lineJoin = "round";
+    const d = reverse ? -1 : 1;
+    x.beginPath(); x.moveTo(cx - 15, cy + 11 * d); x.lineTo(cx, cy - 14 * d); x.lineTo(cx + 15, cy + 11 * d); x.stroke();
+  };
+  if (!horizontal) {                                                     // lane runs along Y
+    x.fillStyle = "rgba(220,220,208,0.45)"; x.fillRect(7, 0, 3, S); x.fillRect(S - 10, 0, 3, S);   // edges
+    x.fillStyle = "rgba(240,210,90,0.9)"; for (let y = 6; y < S; y += 40) x.fillRect(S / 2 - 2, y, 4, 22); // centre dashes
+    arrow(S / 2, S / 2);
+  } else {                                                              // lane runs along X
+    x.save(); x.translate(S / 2, S / 2); x.rotate(Math.PI / 2); x.translate(-S / 2, -S / 2);
+    x.fillStyle = "rgba(220,220,208,0.45)"; x.fillRect(7, 0, 3, S); x.fillRect(S - 10, 0, 3, S);
+    x.fillStyle = "rgba(240,210,90,0.9)"; for (let y = 6; y < S; y += 40) x.fillRect(S / 2 - 2, y, 4, 22);
+    arrow(S / 2, S / 2);
+    x.restore();
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  Art._roadCache[key] = t; return t;
+};
+
 /* A cheap cube environment map (6 gradient faces) for image-based reflections
  * on metal, marble, and glass. Top = sky, bottom = ground, sides between. */
 Art._envCache = {};
