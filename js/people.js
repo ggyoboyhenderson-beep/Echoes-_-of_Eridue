@@ -366,7 +366,7 @@ People.ambientFor = function (district) {
   const faction = People.districtFaction[district] || "none";
   // seed the population count off the district, but each PERSON gets their own
   // independent seed so their identity is fully their own and reproducible.
-  const dcount = 9 + ((mulberry32(hash("amb:" + district))() * 6) | 0); // 9..14 residents
+  const dcount = 22 + ((mulberry32(hash("amb:" + district))() * 10) | 0); // 22..31 residents (a sprawling city)
   const list = [];
   for (let i = 0; i < dcount; i++) {
     const rnd = mulberry32(hash(`person:${district}:${i}`));
