@@ -529,6 +529,34 @@ function detailHouse(x, z, w, h, era, night, isOffice) {
   if (night) light(winColor, 3, x, 2.0, z + w / 2 + 0.4, 6);                                 // porch light
 }
 
+/* ---- CITY BLOCKS — the squares the road grid divides the plot into, so
+ * buildings sit in planned blocks instead of scattered at random angles.    */
+function cityBlocks() {
+  const edges = [-BOUND, -19.8, -13.2, -6.6, 6.6, 13.2, 19.8, BOUND], cells = [];
+  for (let i = 0; i < edges.length - 1; i++) for (let j = 0; j < edges.length - 1; j++) {
+    const cx = (edges[i] + edges[i + 1]) / 2, cz = (edges[j] + edges[j + 1]) / 2;
+    const hx = (edges[i + 1] - edges[i]) / 2, hz = (edges[j + 1] - edges[j]) / 2;
+    cells.push({ cx, cz, hx, hz, ring: Math.max(Math.abs(cx), Math.abs(cz)) });
+  }
+  return cells;
+}
+// Fill the mid-ring blocks (between the inner plaza and the perimeter) with a
+// building each, aligned to the block, leaving the road clearance as sidewalk.
+function fillBlocks(rnd, place, density) {
+  for (const b of cityBlocks()) {
+    if (b.ring < 12 || b.ring > 20) continue;            // inner = plaza, outer = gates/surround
+    if (rnd() > (density != null ? density : 0.82)) continue;
+    const fw = Math.min(b.hx, b.hz) * 2 - 2.4;
+    if (fw < 2) continue;
+    const w = Math.max(2.6, fw * (0.74 + rnd() * 0.2));
+    const x = b.cx + (rnd() - 0.5) * Math.max(0, b.hx * 2 - w - 1.4);
+    const z = b.cz + (rnd() - 0.5) * Math.max(0, b.hz * 2 - w - 1.4);
+    place(x, z, w, rnd, b);
+  }
+}
+// Inner-ring slots for the service stations — a tidy plaza around the centre.
+const STATION_SLOTS = [[9.9, 0], [0, 9.9], [-9.9, 0], [0, -9.9], [9.9, 9.9], [-9.9, 9.9], [-9.9, -9.9], [9.9, -9.9]];
+
 // The lane grid shared by the roads and the cars that drive on them, so the
 // painted arrows always agree with which way traffic is moving.
 function laneGrid() {
@@ -778,11 +806,10 @@ World.buildDistrict = function (id, spawnCenter) {
   if (id === "god_quarter") inner.push(station("omen", "Omen Altar", 0xe6b450, (g) => Actions.omen(g)));
   if (g.aug && id === "neon_labyrinth") inner.push(station("clinic", "Aug Clinic", 0x38d0c8, (g) => Actions.tuneAug(g)));
 
-  // place inner stations on a ring
-  const R = 11;
+  // place inner stations in the plaza slots around the centre (grid-aligned)
   inner.forEach((s, i) => {
-    const a = (i / inner.length) * Math.PI * 2 + 0.4;
-    placeStation(s, Math.cos(a) * R, Math.sin(a) * R, theme);
+    const slot = STATION_SLOTS[i % STATION_SLOTS.length];
+    placeStation(s, slot[0], slot[1], theme);
   });
 
   // gates to adjacent districts on the perimeter (posts share the wall surface)
@@ -833,7 +860,7 @@ World.buildDistrict = function (id, spawnCenter) {
   }
 
   // spawn
-  if (spawnCenter) { player.pos.set(0, 1.7, 16); yaw = Math.PI; pitch = 0; }
+  if (spawnCenter) { player.pos.set(0, 1.7, 11.5); yaw = Math.PI; pitch = 0; }
   player.vel.set(0, 0, 0);
 
   if (window.GameAudio) GameAudio.setDistrict(id, Engine.isNight(g));
@@ -1291,7 +1318,7 @@ World.buildRegion = function (id) {
   const lbl = makeLabel("→ Return to Ur-Axiom", "#9ad"); lbl.position.set(gx, 6.4, gz); lbl.scale.set(6, 1.4, 1); scene.add(lbl); labelSprites.push(lbl);
   interactables.push({ type: "return", label: "Return to Ur-Axiom", pos: new THREE.Vector3(gx, 1, gz - 1.5), radius: ACTIVATE + 1, mesh: null, run: () => { World.returnRegion(); return {}; } });
 
-  player.pos.set(0, 1.7, 16); yaw = Math.PI; pitch = 0; player.vel.set(0, 0, 0);
+  player.pos.set(0, 1.7, 11.5); yaw = Math.PI; pitch = 0; player.vel.set(0, 0, 0);
   if (window.GameAudio) GameAudio.setDistrict("region", Engine.isNight(g));
   World.updateHUD();
 };
@@ -2151,13 +2178,11 @@ const THEMES = {
         else crate(x, z, 0.7, "brick");
       }
       for (let i = 0; i < 4; i++) brazier((rnd() - 0.5) * 40, (rnd() - 0.5) * 40);
-      // ancient mudbrick dwellings clustered around the temple — enterable homes
-      for (let i = 0; i < 12; i++) {
-        const x = (rnd() - 0.5) * 46, z = (rnd() - 0.5) * 46; if (Math.hypot(x, z) < 16) continue;
-        const bw = 3 + rnd() * 2, bh = 3 + rnd() * 3;
-        box(bw, bh, bw, rnd() > 0.5 ? 0x9a7a52 : 0x8a6e4a, x, bh / 2, z, { rough: 1 });
-        registerBuilding(x, z, bw, rnd() > 0.7 ? "Scribe's House" : "Mudbrick Home", "home", "ancient");
-      }
+      // ancient mudbrick dwellings laid out along the streets — enterable homes
+      fillBlocks(rnd, (x, z, w) => {
+        detailHouse(x, z, w, 3 + rnd() * 2.5, "ancient", night, rnd() > 0.75);
+        registerBuilding(x, z, w, rnd() > 0.7 ? "Scribe's House" : "Mudbrick Home", "home", "ancient");
+      });
     },
   },
   hanging_market: {
@@ -2170,21 +2195,18 @@ const THEMES = {
       for (let t = 0; t < 3; t++)
         box(40 - t * 8, 1, 40 - t * 8, t % 2 ? 0x7a6444 : 0x6a5838, 0, 0.5 + t, 0, { rough: 1 });
       const cols = [0xb0452b, 0x2b7ab0, 0x2bb06a, 0xb0962b, 0x7a2bb0, 0xc86a2a];
-      // dense market stalls: counter + canopy + goods + an awning post
-      for (let i = 0; i < 46; i++) {
-        const x = (rnd() - 0.5) * 46, z = (rnd() - 0.5) * 46;
-        if (Math.hypot(x, z) < 12) continue;
+      // market stalls in tidy rows along the blocks: counter + canopy + goods
+      const stall = (x, z, rnd) => {
         const c = cols[(rnd() * cols.length) | 0];
-        box(1.9, 1.0, 1.2, 0x6a513a, x, 0.5, z, { tex: "plank", rough: 0.9 });   // counter
-        if (rnd() > 0.45) registerBuilding(x, z, 1.9, "Market Shop", "shop", "market");
-        box(2.3, 0.16, 1.7, c, x, 1.9, z, { tex: "cloth", rough: 0.85 });          // canopy
-        box(0.1, 1.9, 0.1, 0x4a3a28, x - 1, 0.95, z - 0.7, { tex: null });          // posts
+        box(1.9, 1.0, 1.2, 0x6a513a, x, 0.5, z, { tex: "plank", rough: 0.9 });      // counter
+        box(2.3, 0.16, 1.7, c, x, 1.9, z, { tex: "cloth", rough: 0.85 });           // canopy
+        box(0.1, 1.9, 0.1, 0x4a3a28, x - 1, 0.95, z - 0.7, { tex: null });           // posts
         box(0.1, 1.9, 0.1, 0x4a3a28, x + 1, 0.95, z + 0.7, { tex: null });
-        for (let gj = 0; gj < 3; gj++)                                              // goods on the counter
+        for (let gj = 0; gj < 3; gj++)                                               // goods on the counter
           box(0.3, 0.3, 0.3, cols[(rnd() * cols.length) | 0], x - 0.6 + gj * 0.6, 1.15, z, { tex: null, rough: 0.7 });
-        if (rnd() > 0.6) crate(x + (rnd() - 0.5) * 2, z + (rnd() - 0.5) * 2, 0.6, "plank");
-        if (rnd() > 0.7) barrel(x + (rnd() - 0.5) * 2, z + (rnd() - 0.5) * 2);
-      }
+        registerBuilding(x, z, 1.9, "Market Shop", "shop", "market");
+      };
+      fillBlocks(rnd, (x, z, w, r) => { stall(x, z, r); if (r() > 0.6) crate(x + 1.4, z + 1.2, 0.6, "plank"); }, 0.95);
       // hanging banners and lamps strung over the lanes
       for (let i = 0; i < 14; i++) {
         const x = (rnd() - 0.5) * 44, z = (rnd() - 0.5) * 44; if (Math.hypot(x, z) < 12) continue;
@@ -2241,16 +2263,14 @@ const THEMES = {
     fogNear: 12, fogFar: 55, hemiSky: 0x9a9690, hemiGround: 0x222020, hemiInt: 0.35,
     sun: 0xb0a890, sunInt: 0.4,
     build(rnd, night) {
-      // tall fortified blocks with crenellations and arrow-slits
-      for (let i = 0; i < 10; i++) {
-        const x = (rnd() - 0.5) * 38, z = (rnd() - 0.5) * 38;
-        if (Math.hypot(x, z) < 11) continue;
-        const w = 4 + rnd() * 2.5, h = 8 + rnd() * 9;
+      // tall fortified blocks with crenellations and arrow-slits, on the grid
+      fillBlocks(rnd, (x, z, w0, r) => {
+        const w = Math.min(w0, 5.5), h = 8 + r() * 9;
         box(w, h, w, 0x35332f, x, h / 2, z, { rough: 1 });
-        registerBuilding(x, z, w, rnd() > 0.5 ? "Fortified Home" : "Family Barracks", rnd() > 0.5 ? "home" : "office", "medieval");
+        registerBuilding(x, z, w, r() > 0.5 ? "Fortified Home" : "Family Barracks", r() > 0.5 ? "home" : "office", "medieval");
         for (let m = 0; m < 4; m++) box(w / 4, 0.7, 0.5, 0x2e2c29, x - w / 2 + 0.5 + m * (w / 4), h + 0.35, z + w / 2, { tex: "concrete" }); // merlons
         for (let s = 0; s < 3; s++) box(0.25, 0.9, 0.3, 0x140e08, x, 2 + s * 2.2, z + w / 2 + 0.01, { emissive: 0xff7a30, ei: night ? 0.8 : 0.2, tex: null }); // arrow-slits
-      }
+      });
       // corner keeps with battlements + braziers atop
       for (const [sx, sz] of [[-22, -22], [22, -22], [-22, 22], [22, 22]]) {
         box(4.4, 17, 4.4, 0x2e2c29, sx, 8.5, sz, { rough: 1 });
@@ -2274,22 +2294,20 @@ const THEMES = {
       const cols = [0x6a5236, 0x7a5a3a, 0x5a4a3a, 0x8a6a44, 0x6a5a4a];
       const laundry = [0x9a3a3a, 0x3a6a8a, 0x8a8a4a, 0xa06a3a, 0x4a7a5a];
       const tops = [];
-      for (let i = 0; i < 54; i++) {
-        const x = (rnd() - 0.5) * 48, z = (rnd() - 0.5) * 48;
-        if (Math.hypot(x, z) < 8) continue;
-        const stack = 1 + ((rnd() * 3) | 0); let topY = 0;
+      // stacked salvage shanties packed into the blocks
+      fillBlocks(rnd, (x, z, w0, r) => {
+        const stack = 1 + ((r() * 3) | 0); let topY = 0;
         for (let s = 0; s < stack; s++) {
-          const sz = 1.8 + rnd() * 1.6, hh = 1.8 + rnd() * 0.6;
-          box(sz, hh, sz, cols[(rnd() * cols.length) | 0], x + (rnd() - 0.5), topY + hh / 2, z + (rnd() - 0.5), { rough: 1 });
+          const sz = 1.8 + r() * 1.6, hh = 1.8 + r() * 0.6;
+          box(sz, hh, sz, cols[(r() * cols.length) | 0], x + (r() - 0.5), topY + hh / 2, z + (r() - 0.5), { rough: 1 });
           topY += hh;
-          if (rnd() > 0.5) box(sz + 0.5, 0.1, sz + 0.5, 0x3a3630, x, topY + 0.05, z, { tex: "panel", metal: 0.4 }); // tin roof
+          if (r() > 0.5) box(sz + 0.5, 0.1, sz + 0.5, 0x3a3630, x, topY + 0.05, z, { tex: "panel", metal: 0.4 }); // tin roof
         }
-        if (rnd() > 0.55) { light(0xff8030, 2.6, x, 1.4, z, 7); box(0.4, 0.3, 0.4, 0xff7a25, x, 0.3, z, { emissive: 0xff6a10, ei: 1.4, tex: null }); }
-        if (rnd() > 0.7) crate(x + 1.5, z, 0.6);
-        if (rnd() > 0.8) barrel(x - 1.5, z);
-        if (rnd() > 0.35) registerBuilding(x, z, 2.6, rnd() > 0.7 ? "Salvaged Tenement" : "Home", rnd() > 0.7 ? "tenement" : "home", "market");
+        if (r() > 0.55) { light(0xff8030, 2.6, x, 1.4, z, 7); box(0.4, 0.3, 0.4, 0xff7a25, x, 0.3, z, { emissive: 0xff6a10, ei: 1.4, tex: null }); }
+        if (r() > 0.7) crate(x + 1.5, z, 0.6);
+        registerBuilding(x, z, 2.6, r() > 0.7 ? "Salvaged Tenement" : "Home", r() > 0.7 ? "tenement" : "home", "market");
         if (topY > 2) tops.push([x, topY, z]);
-      }
+      }, 0.92);
       // a communal cistern — the heart of the district's self-governance
       box(4, 1.4, 4, 0x3a4a4a, 7, 0.7, -6, { tex: "concrete" });
       box(3, 0.3, 3, 0x2a5a6a, 7, 1.5, -6, { emissive: 0x1a3a4a, ei: 0.3, tex: null });
@@ -2319,18 +2337,17 @@ const THEMES = {
     build(rnd, night) {
       const neon = [0x38d0c8, 0xff5c7a, 0xc850ff, 0x50ff9a, 0xffd23a, 0x40a0ff];
       const tops = [];
-      for (let i = 0; i < 24; i++) {
-        const x = (rnd() - 0.5) * 48, z = (rnd() - 0.5) * 48;
-        if (Math.hypot(x, z) < 9) continue;
-        const w = 3.4 + rnd() * 2.4, h = 9 + rnd() * 21;
-        const c = neon[(rnd() * neon.length) | 0];
-        cityTower(rnd, x, z, w, h, 0x16161f, { neon: true, night: true, winColor: c, stripColor: c, metal: 0.35, rough: 0.5 });
-        registerBuilding(x, z, w, rnd() > 0.5 ? "Apartment Block" : "Office Tower", rnd() > 0.5 ? "home" : "office", "cyber");
-        const sc = neon[(rnd() * neon.length) | 0];
-        box(0.1, 1.6, 1.4, sc, x + w / 2 + 0.2, h * (0.4 + rnd() * 0.4), z, { emissive: sc, ei: 1.4, tex: null }); // holo sign
-        if (rnd() > 0.6) light(c, 5, x, h * 0.5, z, 16);
+      // neon towers rising from each city block
+      fillBlocks(rnd, (x, z, w0, r) => {
+        const w = Math.min(w0, 5.4), h = 9 + r() * 21;
+        const c = neon[(r() * neon.length) | 0];
+        cityTower(r, x, z, w, h, 0x16161f, { neon: true, night: true, winColor: c, stripColor: c, metal: 0.35, rough: 0.5 });
+        registerBuilding(x, z, w, r() > 0.5 ? "Apartment Block" : "Office Tower", r() > 0.5 ? "home" : "office", "cyber");
+        const sc = neon[(r() * neon.length) | 0];
+        box(0.1, 1.6, 1.4, sc, x + w / 2 + 0.2, h * (0.4 + r() * 0.4), z, { emissive: sc, ei: 1.4, tex: null }); // holo sign
+        if (r() > 0.6) light(c, 5, x, h * 0.5, z, 16);
         tops.push([x, h, z, c]);
-      }
+      }, 0.9);
       // sagging power/data cables between towers
       for (let i = 0; i + 1 < tops.length && i < 30; i++) {
         const a = tops[i], b = tops[(i + 2) % tops.length];
@@ -2351,14 +2368,13 @@ const THEMES = {
     fogNear: 30, fogFar: 140, hemiSky: 0xffffff, hemiGround: 0x90a0b0, hemiInt: 0.9,
     sun: 0xffffff, sunInt: 1.4,
     build(rnd, night) {
-      // clean tall glass towers in varied silhouettes, with baked lit windows
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2, r = 15 + rnd() * 7;
-        const x = Math.cos(a) * r, z = Math.sin(a) * r, w = 4.5 + rnd() * 2.2, h = 24 + rnd() * 26;
-        cityTower(rnd, x, z, w, h, 0xeaf0f6, { night, winColor: 0xbfe2ff, metal: 0.65, rough: 0.12 });
+      // clean tall glass towers on the grid, with baked lit windows
+      fillBlocks(rnd, (x, z, w0, r) => {
+        const w = Math.min(w0, 5.6), h = 24 + r() * 26;
+        cityTower(r, x, z, w, h, 0xeaf0f6, { night, winColor: 0xbfe2ff, metal: 0.65, rough: 0.12 });
         registerBuilding(x, z, w, "Corporate Office", "office", "corporate");
         box(0.3, 2, 0.3, 0xcfe0ee, x, h + 1, z, { emissive: 0x88c0ff, ei: night ? 1.2 : 0.4, tex: null }); // beacon
-      }
+      }, 0.85);
       // central monument + reflecting plaza + planters
       box(10, 1, 10, 0xf0f4f8, 0, 0.5, 0, { metal: 0.4, rough: 0.15 });
       box(1.2, 9, 1.2, 0xdfe8f0, 0, 5, 0, { metal: 0.6, rough: 0.1, emissive: 0x4a6a8a, ei: 0.3 });
