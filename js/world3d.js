@@ -48,6 +48,23 @@ function randomPOI(types) {
   const c = pois.filter((p) => types.includes(p.type));
   return c.length ? c[(Math.random() * c.length) | 0] : null;
 }
+// Height of the walkable ground at (x,z) — the central stepped platforms in a
+// couple of districts are raised, so people (and you) must stand on top of them
+// instead of sinking through. Everywhere else the ground is flat (0).
+function terrainY(x, z) {
+  if (inInterior || inRegion) return 0;
+  const r = Math.max(Math.abs(x), Math.abs(z));
+  if (currentDistrictId === "hanging_market") {       // three square terraces
+    if (r < 12) return 3; if (r < 16) return 2; if (r < 20) return 1; return 0;
+  }
+  if (currentDistrictId === "ziggurat_crown") {        // 7-tier stepped pyramid
+    let y = 0;
+    for (let i = 0; i < 7; i++) { const half = (18 - 2.2 * i) / 2; if (r <= half) y = i * 1.6 + 1.6; }
+    return y;
+  }
+  return 0;
+}
+
 // derive POIs from the interactables placed during the build
 function buildPOIs() {
   pois = [];
@@ -2077,46 +2094,104 @@ const PURPOSE_DO = { work: "working", food: "eating", rest: "resting at home", h
 const ACT_POSE = { work: "work", food: "eat", rest: "rest", home: "rest", pray: "pray",
   market: null, tend: "hawk", patrol: null, social: null, wander: null };
 
-function goalTypeFor(ag, g) {
-  const per = dayPeriod(g), r = Math.random();
-  switch (ag.routine) {
-    case "tend":   return per === "night" ? "home" : "market";
-    case "pray":   return per === "night" ? "home" : "pray";
-    case "patrol": return "patrol";
-    case "loiter": return ["market", "food", "social", "wander"][(r * 4) | 0];
-    default:       // worker
-      if (per === "night")     return r < 0.7 ? "home" : "rest";
-      if (per === "morning")   return r < 0.7 ? "work" : "food";
-      if (per === "midday")    return r < 0.5 ? "work" : "food";
-      if (per === "afternoon") return r < 0.85 ? "work" : "market";
-      return ["market", "food", "home", "social"][(r * 4) | 0];   // evening
-  }
+/* ---- a life: a specific home & workplace, and needs that drift ----------- */
+function initAgentLife(ag) {
+  ag.routine = routineOf(ag.meta.kind);
+  const t = ag.meta.personality || {};
+  const h = hash(ag.meta.id || ("a" + (ag.grp.position.x | 0) + (ag.grp.position.z | 0)));
+  const homes = pois.filter((p) => p.type === "home");
+  const works = pois.filter((p) => p.type === "work");
+  const prays = pois.filter((p) => p.type === "pray");
+  const markets = pois.filter((p) => p.type === "market");
+  // each person belongs to a specific door and a specific livelihood
+  ag.home = homes.length ? homes[h % homes.length] : null;
+  if (ag.routine === "pray") ag.work = prays.length ? prays[h % prays.length] : null;
+  else if (ag.routine === "tend") ag.work = markets.length ? markets[h % markets.length] : null;
+  else ag.work = works.length ? works[(h >> 4) % works.length] : (markets[0] || null);
+  ag.needs = { hunger: Math.random() * 0.4, fatigue: Math.random() * 0.4, social: Math.random() * 0.4, faith: Math.random() * 0.3 };
+  ag.coin = 4 + (h % 18);
+  ag.greed = t.greed || 0; ag.warmth = t.warmth || 0;
+  ag.piety = ag.routine === "pray" ? 1.1 : (ag.meta.kind === "devotee" || ag.meta.kind === "pilgrim" ? 0.9 : 0.15 + Math.max(0, (t.pride || 0)) * 0.1);
 }
+// a short human read-out of how this person is doing right now
+function lifeDesc(ag) {
+  if (!ag || !ag.needs) return "";
+  const n = ag.needs, w = [];
+  if (n.hunger > 0.8) w.push("famished"); else if (n.hunger > 0.6) w.push("hungry");
+  if (n.fatigue > 0.85) w.push("exhausted"); else if (n.fatigue > 0.6) w.push("weary");
+  if (n.social > 0.85) w.push("lonely");
+  if (ag.piety > 0.6 && n.faith > 0.85) w.push("hungry for grace");
+  if (ag.coin != null) { if (ag.coin <= 2) w.push("flat broke"); else if (ag.coin > 16) w.push("flush with coin"); }
+  return w.slice(0, 3).join(", ");
+}
+function tickNeeds(ag, g, dt) {
+  const n = ag.needs; if (!n) return;
+  const night = Engine.isNight && Engine.isNight(g);
+  n.hunger = Math.min(1.4, n.hunger + dt * 0.012);
+  n.fatigue = Math.min(1.4, n.fatigue + dt * (night ? 0.016 : 0.0085));
+  n.social = Math.min(1.2, n.social + dt * 0.008 * (1 + Math.max(0, ag.warmth)));
+  n.faith = Math.min(1.2, n.faith + dt * 0.006 * ag.piety);
+}
+// utility-based: what does this person most need to do right now?
 function chooseGoal(ag, g) {
-  if (ag.routine == null) ag.routine = routineOf(ag.meta.kind);
+  if (ag.needs == null) initAgentLife(ag);
   ag.activityT = 0;
-  const gp = ag.grp.position;
-  let type = goalTypeFor(ag, g), poi = null;
-  if (type === "home") {
-    if (!ag.home) ag.home = nearestPOI("home", gp.x, gp.z) || { x: gp.x, z: gp.z, type: "home", label: "home" };
-    poi = ag.home;
-  } else if (type === "patrol") poi = randomPOI(["gate", "market", "work"]);
-  else if (type === "social" || type === "wander") { const w = pickWander(); poi = { x: w.x, z: w.z, label: "the streets" }; }
+  const gp = ag.grp.position, n = ag.needs, per = dayPeriod(g), night = per === "night";
+  const h = g.hour == null ? 12 : g.hour;
+  const meal = (h >= 7 && h < 9) || (h >= 12 && h < 14) || (h >= 18 && h < 20);
+  const workHrs = !night && per !== "evening";
+  const coinNeed = Math.max(0, (12 - ag.coin) / 12);
+  const S = {
+    food:   n.hunger * 1.1 + (meal ? 0.35 : 0),
+    rest:   n.fatigue * 1.0 + (night ? 0.7 : -0.15),
+    work:   coinNeed * 0.9 + (workHrs ? 0.45 : -0.3) + Math.max(0, ag.greed) * 0.25 - n.fatigue * 0.5 - n.hunger * 0.4,
+    pray:   n.faith * (0.5 + ag.piety),
+    social: n.social * 0.7 + Math.max(0, ag.warmth) * 0.2,
+    market: 0.15 + Math.max(0, ag.greed) * 0.2 + (per === "evening" ? 0.3 : 0),
+    home:   (night ? 0.55 : 0) + n.fatigue * 0.3,
+  };
+  if (ag.routine === "tend") { S.work = workHrs ? 1.3 : 0.15; S.market -= 1; }   // their work is the stall
+  if (ag.routine === "patrol") { S.work = -1; S.patrol = 1.2; }
+  if (ag.routine === "loiter") { S.work -= 0.7; S.social += 0.4; S.market += 0.25; S.rest -= 0.2; }
+  // choose the highest-utility action, with a little noise so a street isn't in lockstep
+  let type = "social", bv = -1e9;
+  for (const k in S) { const v = S[k] + Math.random() * 0.16; if (v > bv) { bv = v; type = k; } }
+
+  let poi = null;
+  if (type === "rest" || type === "home") poi = ag.home || nearestPOI("home", gp.x, gp.z);
+  else if (type === "work") poi = ag.work || nearestPOI("work", gp.x, gp.z);
+  else if (type === "pray") poi = ag.work && ag.routine === "pray" ? ag.work : nearestPOI("pray", gp.x, gp.z);
+  else if (type === "patrol") poi = randomPOI(["gate", "market", "work"]);
+  else if (type === "social") { const w = pickWander(); poi = { x: w.x, z: w.z, label: "the streets" }; }
   else poi = nearestPOI(type, gp.x, gp.z);
-  if (!poi) { const w = pickWander(); poi = { x: w.x, z: w.z, label: "the streets" }; type = "wander"; }
+  if (!poi) { const w = pickWander(); poi = { x: w.x, z: w.z, label: "the streets" }; type = "social"; }
+  if (type === "rest") type = "home";
   ag.goal = poi; ag.goalType = type;
   ag.purpose = PURPOSE_GO[type] || "wandering";
 }
 function startActivity(ag) {
   const ty = ag.goalType;
   let dur = { work: 10 + Math.random() * 8, pray: 8 + Math.random() * 6, food: 5 + Math.random() * 4,
-    rest: 12 + Math.random() * 10, market: 6 + Math.random() * 6, home: 8 + Math.random() * 8,
-    patrol: 0.4, social: 3 + Math.random() * 4, wander: 1 }[ty] || 5;
+    rest: 12 + Math.random() * 10, home: 10 + Math.random() * 10, market: 6 + Math.random() * 6,
+    patrol: 0.4, social: 3 + Math.random() * 4 }[ty] || 5;
   let pose = ACT_POSE[ty] || null;
-  if (ag.routine === "tend" && ty === "market") { dur = 12 + Math.random() * 8; pose = "hawk"; }
-  if (ag.routine === "loiter" && (ty === "social" || ty === "wander")) { pose = ag.basePose; }
+  if (ag.routine === "tend" && ty === "work") { dur = 12 + Math.random() * 8; pose = "hawk"; }
+  if (ag.routine === "loiter" && ty === "social") pose = ag.basePose;
   ag.activityT = dur; ag.activityPose = pose;
-  ag.purpose = PURPOSE_DO[ty] || ag.purpose;
+  ag.purpose = (ag.routine === "tend" && ty === "work") ? "tending a stall" : (PURPOSE_DO[ty] || ag.purpose);
+}
+// arriving home/at work/etc. actually settles the need that drove them there
+function completeActivity(ag) {
+  const n = ag.needs; if (!n) return;
+  switch (ag.goalType) {
+    case "food":  n.hunger = 0; ag.coin = Math.max(0, ag.coin - 2); break;
+    case "home":
+    case "rest":  n.fatigue = 0; break;
+    case "work":  ag.coin += 3; n.fatigue = Math.min(1.4, n.fatigue + 0.2); n.hunger = Math.min(1.4, n.hunger + 0.15); break;
+    case "pray":  n.faith = 0; break;
+    case "market": n.social = Math.max(0, n.social - 0.3); if (ag.greed > 0 && ag.coin > 3) ag.coin -= 1; break;
+    case "social": n.social = Math.max(0, n.social - 0.4); break;
+  }
 }
 
 function updateAgents(dt) {
@@ -2124,6 +2199,7 @@ function updateAgents(dt) {
   for (const ag of agents) {
     if (ag.socialCD != null && !ag.partner) ag.socialCD -= dt;  // tick conversation cooldown
     if (ag.basePose === undefined) ag.basePose = ag.pose || null;   // remember street-life's standing pose
+    if (ag.needs) tickNeeds(ag, State.data, dt);                     // hunger/fatigue/etc. drift
     if (ag.state === "frozen") { // inspector pose: gentle idle only
       ag.idle = (ag.idle || 0) + dt; const br = Math.sin(ag.idle * 1.6) * 0.04;
       ag.parts.larmPivot.rotation.x = br; ag.parts.rarmPivot.rotation.x = -br;
@@ -2155,7 +2231,9 @@ function updateAgents(dt) {
         const step = ag.speed * 0.8 * dt; gp.x += dx / d * step; gp.z += dz / d * step;
         moving = true; ag.state = "approach";
       } else {
-        ag.state = "talk"; ag.gesture = 1; ag.talkT -= dt; if (ag.talkT <= 0) breakPair(ag);
+        ag.state = "talk"; ag.gesture = 1; ag.talkT -= dt;
+        if (ag.needs) ag.needs.social = Math.max(0, ag.needs.social - dt * 0.25);   // chatting eases loneliness
+        if (ag.talkT <= 0) breakPair(ag);
       }
     } else if (ag.stationary) {
       ag.state = "idle"; targetFacing = ag.facing;
@@ -2166,7 +2244,7 @@ function updateAgents(dt) {
       if (ag.activityT > 0) {                          // performing an activity
         ag.state = "busy"; targetFacing = ag.facing; ag.activityT -= dt;
         ag.pose = ag.activityPose || null;
-        if (ag.activityT <= 0) { ag.pose = ag.basePose; chooseGoal(ag, State.data); }
+        if (ag.activityT <= 0) { completeActivity(ag); ag.pose = ag.basePose; chooseGoal(ag, State.data); }
       } else {                                          // travelling to the goal
         ag.pose = ag.basePose;
         const dx = ag.goal.x - gp.x, dz = ag.goal.z - gp.z, d = Math.hypot(dx, dz);
@@ -2179,6 +2257,14 @@ function updateAgents(dt) {
         }
       }
       maybeSocialise(ag);
+    }
+
+    // keep people out of solid buildings (no walking through walls)
+    if (moving && !inInterior && !inRegion) {
+      for (const c of colliders) {
+        const dx = gp.x - c.x, dz = gp.z - c.z, d = Math.hypot(dx, dz), min = c.r + 0.25;
+        if (d < min && d > 1e-4) { gp.x = c.x + (dx / d) * min; gp.z = c.z + (dz / d) * min; }
+      }
     }
 
     // smooth turn
@@ -2205,7 +2291,8 @@ function updateAgents(dt) {
     ag.idle = (ag.idle || Math.random() * 6) + dt;
     const breathe = Math.sin(ag.idle * 1.6) * 0.02;
     const bob = moving ? Math.abs(Math.sin(ag.phase)) * 0.04 * ag.amp : 0;
-    ag.grp.position.y = (ag.baseY || 0) + bob;
+    const terr = (ag.floor !== undefined || inRegion) ? 0 : terrainY(gp.x, gp.z);
+    ag.grp.position.y = (ag.baseY || 0) + terr + bob;
     if (!moving) { P.larmPivot.rotation.x = breathe; P.rarmPivot.rotation.x = -breathe; }
 
     // conversational gesturing — a raised, moving hand while talking
@@ -2622,7 +2709,7 @@ function updateMovement(dt) {
       if (d < min && d > 1e-4) { player.pos.x = c.x + (dx / d) * min; player.pos.z = c.z + (dz / d) * min; }
     }
   }
-  player.pos.y = (inInterior ? currentFloorY : 0) + 1.7;
+  player.pos.y = (inInterior ? currentFloorY : terrainY(player.pos.x, player.pos.z)) + 1.7;
 }
 
 function updateFocus() {
@@ -2877,18 +2964,24 @@ function renderDialog(greeting) {
   const mood = MOOD_WORD[moodKey] || "at ease";
   const mc = (MOODS[moodKey] && MOODS[moodKey].c) || "#cdbf9a";
   const doing = d.agent && d.agent.purpose ? ` · <span class="muted">${d.agent.purpose}</span>` : "";
+  const life = d.agent ? lifeDesc(d.agent) : "";
   document.getElementById("dlg-role").innerHTML =
     `${meta.role} · ${AXIOM.FACTIONS[meta.faction] || "Unaffiliated"}${origin} — ${pers}` +
-    ` · <span style="color:${mc}">${mood}</span>${doing}`;
+    ` · <span style="color:${mc}">${mood}</span>${doing}` +
+    (life ? ` · <span class="muted">${life}</span>` : "");
 
   // standing with this person + their faction
   const tierName = ["marked", "disliked", "known to", "trusted by", "honored by"];
   const t = rec.disp > 50 ? 4 : rec.disp > 15 ? 3 : rec.disp > -15 ? 2 : rec.disp > -50 ? 1 : 0;
   const tc = ["#d9534f", "#e0a046", "#8a7f6e", "#6fcf6f", "#6fcf6f"][t];
   const fr = Engine.factionRep(g, meta.faction);
+  const cleanL = (s) => s ? s.replace(/^Enter — /, "").replace(/^→\s*/, "") : "";
+  const a = d.agent;
+  const livelihood = a && (a.home || a.work)
+    ? `<div class="muted small" style="margin-top:4px">${a.home ? "lives at the " + cleanL(a.home.label) : ""}${a.home && a.work ? " · " : ""}${a.work ? "works at the " + cleanL(a.work.label) : ""}</div>` : "";
   document.getElementById("dlg-standing").innerHTML =
     `<span class="tier" style="color:${tc}">${tierName[t]} them (${rec.disp})</span>
-     <span class="muted" style="margin-left:8px">faction standing: ${fr}</span>`;
+     <span class="muted" style="margin-left:8px">faction standing: ${fr}</span>${livelihood}`;
 
   const line = greeting ? People.pickGreet(meta, rec.disp) : (d.lastLine || "");
   const beat = greeting && MOOD_BEAT[moodKey] ? `<span class="beat">${MOOD_BEAT[moodKey]}</span> ` : "";
