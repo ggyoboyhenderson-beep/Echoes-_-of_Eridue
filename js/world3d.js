@@ -31,8 +31,8 @@ let started = false;
 let toastTimer = 0;
 
 const ACTIVATE = 4.2;     // proximity radius to interact
-const BOUND = 84;         // half-size of a district plot (a sprawling city)
-const LANE_STEP = 16;     // spacing of the road grid / size of a city block
+const BOUND = 140;        // half-size of a district plot (a sprawling metropolis)
+const LANE_STEP = 18;     // spacing of the road grid / size of a city block
 
 /* solid building footprints the player can't walk through (outdoor only) */
 let colliders = [];
@@ -505,7 +505,7 @@ let cityTraffic = null, cityTrafficData = [];
  * a near band of homes, then mid-rise offices, then a far skyline of towers. */
 function buildSurroundCity(theme, night) {
   const modern = theme.tex === "neon" || theme.tex === "panel" || theme.tex === "marble";
-  const N = 620;
+  const N = 900;
   // lit windows on EVERY building now — warm for old eras, cool for modern
   const winColor = modern ? (theme.tex === "marble" ? 0xbfe2ff : 0x38d0c8) : 0xffcf8a;
   const win = Art ? Art.windowTex(winColor, night, 4242) : null;
@@ -528,8 +528,8 @@ function buildSurroundCity(theme, night) {
     const a = Math.random() * Math.PI * 2;
     // distance ring controls scale: near = homes, mid = offices, far = towers
     const t = Math.random();
-    const r = BOUND + 8 + t * 150;
-    const h = t < 0.33 ? 5 + Math.random() * 10 : t < 0.66 ? 14 + Math.random() * 26 : 36 + Math.random() * 80;
+    const r = BOUND + 10 + t * 240;
+    const h = t < 0.33 ? 6 + Math.random() * 14 : t < 0.66 ? 18 + Math.random() * 40 : 50 + Math.random() * 140;
     const w = (t < 0.33 ? 4 : 6) + Math.random() * (t < 0.33 ? 3 : 9);
     const d = w * (0.8 + Math.random() * 0.5);
     const x = Math.cos(a) * r, z = Math.sin(a) * r, rot = Math.random() * Math.PI;
@@ -606,7 +606,7 @@ function fillBlocks(rnd, place, density, opts) {
   opts = opts || {};
   const minR = opts.minRing != null ? opts.minRing : LANE_STEP * 0.7;
   const maxR = opts.maxRing != null ? opts.maxRing : BOUND - LANE_STEP * 0.5;
-  const cap = opts.cap != null ? opts.cap : 80;
+  const cap = opts.cap != null ? opts.cap : 110;
   let n = 0;
   for (const b of cityBlocks()) {
     if (b.ring < minR || b.ring > maxR) continue;        // inner = plaza, outer = wall
@@ -635,8 +635,8 @@ function laneGrid() {
   }
   return lanes;
 }
-const TRAFFIC_COUNT = { neon_labyrinth: 360, spire: 240, hanging_market: 300,
-  ironwall: 240, broken_crown: 300, ziggurat_crown: 110, god_quarter: 0, sub_strata: 0 };
+const TRAFFIC_COUNT = { neon_labyrinth: 560, spire: 380, hanging_market: 460,
+  ironwall: 380, broken_crown: 460, ziggurat_crown: 180, god_quarter: 0, sub_strata: 0 };
 
 /* Visible streets: a grid of asphalt lanes with edge lines, dashed centres, and
  * direction chevrons, plus a perimeter ring road under the circling vehicles. */
@@ -829,9 +829,11 @@ World.buildDistrict = function (id, spawnCenter, cinematic) {
   sun.position.set(28, 46, 18);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.near = 1; sun.shadow.camera.far = 140;
-  sun.shadow.camera.left = -BOUND - 6; sun.shadow.camera.right = BOUND + 6;
-  sun.shadow.camera.top = BOUND + 6; sun.shadow.camera.bottom = -BOUND - 6;
+  // crisp shadows over the central core; the far sprawl reads through fog/light
+  const SH = Math.min(BOUND + 6, 75);
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 220;
+  sun.shadow.camera.left = -SH; sun.shadow.camera.right = SH;
+  sun.shadow.camera.top = SH; sun.shadow.camera.bottom = -SH;
   sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.02;
   scene.add(sun);
 
@@ -1192,8 +1194,8 @@ const STREET_LIFE = {
   spire:          ["hawker", "busker"],
   sub_strata:     ["beggar", "drunk", "cutpurse"],
 };
-const STREET_N = { neon_labyrinth: 40, broken_crown: 36, hanging_market: 32, ironwall: 26,
-  sub_strata: 16, ziggurat_crown: 20, god_quarter: 12, spire: 12 };
+const STREET_N = { neon_labyrinth: 60, broken_crown: 54, hanging_market: 48, ironwall: 40,
+  sub_strata: 22, ziggurat_crown: 30, god_quarter: 16, spire: 18 };
 const STREET_POSE = { beggar: "beg", solicitor: "solicit", busker: "busk", drunk: "drunk",
   preacher: "preach", hawker: "hawk", cutpurse: "lurk", addict: "drunk" };
 const STREET_WANDER = { drunk: 1, addict: 1, cutpurse: 1 };  // these roam; others hold a corner
@@ -2423,7 +2425,7 @@ const THEMES = {
       for (let i = 0; i < 4; i++) brazier((rnd() - 0.5) * 40, (rnd() - 0.5) * 40);
       // towering ancient mudbrick tenement-ziggurats lining the streets
       fillBlocks(rnd, (x, z, w) => {
-        detailHouse(x, z, w, 10 + rnd() * 16, "ancient", night, rnd() > 0.75);
+        detailHouse(x, z, w, 16 + rnd() * 28, "ancient", night, rnd() > 0.8);
         registerBuilding(x, z, w, rnd() > 0.7 ? "Scribe's Tower" : "Mudbrick Tenement", "home", "ancient");
       });
     },
@@ -2512,7 +2514,7 @@ const THEMES = {
     build(rnd, night) {
       // tall fortified blocks with crenellations and arrow-slits, on the grid
       fillBlocks(rnd, (x, z, w0, r) => {
-        const w = Math.min(w0, 12), h = 22 + r() * 34;
+        const w = Math.min(w0, 14), h = 34 + r() * 54;
         box(w, h, w, 0x35332f, x, h / 2, z, { rough: 1 });
         registerBuilding(x, z, w, r() > 0.5 ? "Fortified Tower" : "Family Bastion", r() > 0.5 ? "home" : "office", "medieval");
         for (let m = 0; m < 4; m++) box(w / 4, 0.7, 0.5, 0x2e2c29, x - w / 2 + 0.5 + m * (w / 4), h + 0.35, z + w / 2, { tex: "concrete" }); // merlons
@@ -2586,7 +2588,7 @@ const THEMES = {
       const tops = [];
       // neon towers rising from each city block
       fillBlocks(rnd, (x, z, w0, r) => {
-        const w = Math.min(w0, 11), h = 34 + r() * 70;       // neon skyscrapers
+        const w = Math.min(w0, 13), h = 55 + r() * 120;      // neon megascrapers
         const c = neon[(r() * neon.length) | 0];
         cityTower(r, x, z, w, h, 0x16161f, { neon: true, night: true, winColor: c, stripColor: c, metal: 0.35, rough: 0.5 });
         registerBuilding(x, z, w, r() > 0.5 ? "Apartment Arcology" : "Corp Tower", r() > 0.5 ? "home" : "office", "cyber");
@@ -2617,7 +2619,7 @@ const THEMES = {
     build(rnd, night) {
       // clean tall glass towers on the grid, with baked lit windows
       fillBlocks(rnd, (x, z, w0, r) => {
-        const w = Math.min(w0, 12), h = 55 + r() * 90;       // gleaming mega-towers
+        const w = Math.min(w0, 14), h = 90 + r() * 150;      // colossal gleaming spires
         cityTower(r, x, z, w, h, 0xeaf0f6, { night, winColor: 0xbfe2ff, metal: 0.65, rough: 0.12 });
         registerBuilding(x, z, w, "Corporate Megatower", "office", "corporate");
         box(0.3, 2, 0.3, 0xcfe0ee, x, h + 1, z, { emissive: 0x88c0ff, ei: night ? 1.2 : 0.4, tex: null }); // beacon
@@ -2789,7 +2791,7 @@ function updateLook(dt) {
 
 function updateMovement(dt) {
   if (freeCam) return;          // detached camera holds its position
-  const speed = (keys.ShiftLeft || keys.ShiftRight) ? 26 : 13;   // bigger city → faster stride, Shift to sprint
+  const speed = (keys.ShiftLeft || keys.ShiftRight) ? 42 : 17;   // metropolis → faster stride, Shift to sprint
   const f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
   const s = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
   const fwd = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
