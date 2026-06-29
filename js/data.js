@@ -281,6 +281,63 @@ AXIOM.PROTAGONISTS = [
 ];
 
 /* --------------------------------------------------------------------------
+ * RELATIONSHIPS — the people from your past who are already in the world.
+ * You discover who you are by meeting them (Ch.8). Each is placed in a district;
+ * the first time you find them, a reveal plays and your standing is pre-set.
+ * { name, role, bond, kind, faction, where, dispo, reveal }
+ * -------------------------------------------------------------------------- */
+AXIOM.RELATIONS = {
+  acolyte: [
+    { name: "Father Ekur", role: "High Priest", bond: "the priest who raised you", kind: "priest", faction: "temple", where: "ziggurat_crown", dispo: 30,
+      reveal: "You know this face before you know anything else. Ekur raised you inside these walls — closer than the father you never had. His eyes find yours and soften, then harden, because hierarchy is watching. \"Child. You should not have come to me. But I am glad of it.\"" },
+    { name: "Acolyte Lugal", role: "Rival Acolyte", bond: "the one who covets your place", kind: "scribe", faction: "temple", where: "ziggurat_crown", dispo: -35,
+      reveal: "You have known Lugal since you were both children of the Crown, and you have never trusted his smile. It is the smile he is wearing now. The altered prayer-record was in his hand before it was in yours, you are suddenly certain of it. \"Accused already? A pity. I did warn them about you.\"" },
+  ],
+  merchant: [
+    { name: "Saru the Elder", role: "Your Father", bond: "your father, the patriarch", kind: "merchant", faction: "guild", where: "hanging_market", dispo: 25,
+      reveal: "Eight hundred years of ledger stand behind the old man at the stall, and all of it is yours to inherit or to lose. Your father. He does not rise. \"So. The heir remembers the Market exists. Sit. We will see what you are worth before I am in the ground.\"" },
+  ],
+  scion: [
+    { name: "Matron Kol", role: "Warlord of the Family", bond: "your mother, the Matron", kind: "warlord", faction: "ironwall", where: "ironwall", dispo: 20,
+      reveal: "The Matron of the Kol family does not embrace her children in public. She looks at you the way she looks at a blade she is deciding whether to trust. \"You have the clinic to collect from. Do not make the family look soft, Vesha. Blood is the only currency that never inflates.\"" },
+    { name: "Medic Wren", role: "Clinic Doctor", bond: "the medic who once saved your life", kind: "medic", faction: "broken_crown", where: "broken_crown", dispo: 15,
+      reveal: "You were a child, and you were dying, and this is the hand that closed the wound — in the very clinic your family now sends you to bleed dry. Doctor Wren recognises you a heartbeat after you recognise them. \"...Vesha Kol. Look how tall. Have you come to help us, or to finish us?\"" },
+  ],
+  runner: [
+    { name: "The Fixer Vane", role: "Fixer", bond: "the fixer who owns your debt", kind: "fixer", faction: "street", where: "neon_labyrinth", dispo: -10,
+      reveal: "Those are your eyes Vane installed — secondhand optics and a debt that was never really yours to sign. The cig doesn't leave their mouth. \"My favorite walking warranty. Your maintenance is overdue, Cipher. So is what you owe me. Funny how those line up.\"" },
+  ],
+  slumborn: [
+    { name: "Elder Ama", role: "Council Elder", bond: "the elder who raised the block that raised you", kind: "councilor", faction: "broken_crown", where: "broken_crown", dispo: 35,
+      reveal: "No papers, no record — but this woman knows your name, knew it before you could speak it. The councils raised you; Ama was the councils. \"Hale. They've dated the wall to come down. Eight thousand of us behind it. I taught you everything I know — I pray some of it was useful.\"" },
+  ],
+  lawspeaker: [
+    { name: "Envoy Naran", role: "Steppe Envoy", bond: "the kinsman who sent you south", kind: "nomad", faction: "steppe", where: "hanging_market", dispo: 25,
+      reveal: "A face from the grass, here amid the city's writing-down of everything. Naran carries the confederation's trust the way you carry its law — in memory, unwritten. \"Tem Aravat. The herd-ledger's trail ends below the city, in the dark. Recover it, or a thousand years of oral law has a hole in it shaped like your failure.\"" },
+  ],
+  highlander: [
+    { name: "Broker Sallё", role: "City Broker", bond: "the broker who forged your clan's charter", kind: "scribe", faction: "guild", where: "hanging_market", dispo: -40,
+      reveal: "This is the soft city hand that sold your clan's obsidian under a charter no Highlander ever signed. Sallе's smile does not reach the eyes that are already pricing your boots. \"Quarry-folk. We don't usually let your sort onto the terraces. State your business and mind the help.\"" },
+  ],
+  fracturehack: [
+    { name: "Investigator Doll", role: "Corp Security", bond: "the investigator hunting your breach", kind: "guard", faction: "corporate", where: "neon_labyrinth", dispo: -45,
+      reveal: "You sabotaged a corp, once, cleanly — and this is the patient face that finally put your name to it. Doll is not surprised to see you. Doll is never surprised. \"Cy Rax. The breach has a signature, and the signature has a person, and the person is standing in front of me. We should talk. You won't enjoy it.\"" },
+  ],
+  dyula: [
+    { name: "Factor Aba", role: "Family Factor", bond: "your family's factor in the city", kind: "merchant", faction: "guild", where: "hanging_market", dispo: 30,
+      reveal: "Six generations of Deep-South routes run through ledgers this man keeps for your family in the city's heart. Factor Aba clasps your arm. \"Keita Diallo. The corporate logistics firm moves against our route this season. Coin and kin — we'll need both. It is good you came yourself.\"" },
+  ],
+  holdsnoble: [
+    { name: "Lord Brask", role: "Rival Noble", bond: "the rival pushing the fraudulent charter", kind: "exec", faction: "corporate", where: "spire", dispo: -35,
+      reveal: "The mining charter your house calls fraud has a champion, and here he is in corporate marble, smiling like a contract. Brask inclines his head a precise, insulting degree. \"A Hold noble, this far up the Spire. The charter ratifies this week, Sif. You are welcome to watch. You are not welcome to interfere.\"" },
+  ],
+  deltarunner: [
+    { name: "The One Who Sent You", role: "Cipher-Bearer", bond: "the one who handed you the message", kind: "smuggler", faction: "substrata", where: "broken_crown", dispo: 5,
+      reveal: "You carried their message into the city and it trapped you here. You did not expect to see their face again. They keep to the shadow of the cistern. \"Ngozi. You read water; you should have read me. The message you carried — someone powerful would still kill to keep it unread. Including, perhaps, me.\"" },
+  ],
+};
+
+/* --------------------------------------------------------------------------
  * SKILLS — competence earned, never assigned. Improves through repetition,
  * decays through neglect. Knowledge-gated skills must be taught first.
  * -------------------------------------------------------------------------- */

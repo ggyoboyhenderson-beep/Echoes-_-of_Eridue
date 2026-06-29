@@ -1179,6 +1179,39 @@ function spawnPeople(g, id, rnd) {
       run: () => { openDialogue(meta, agent); return {}; },
     });
   });
+
+  spawnRelations(g, id, rnd);                 // the people from your past, if any are here
+}
+
+// place a named figure at a fixed, findable spot, marked with a gold beacon
+function addNamedAgent(meta, x, z) {
+  const built = makeHuman(meta.appear);
+  built.grp.position.set(x, 0, z); built.grp.rotation.y = Math.atan2(-x, -z); scene.add(built.grp);
+  const tag = makeLabel(meta.name, "#e6b450"); tag.position.set(0, 2.05 / built.grp.scale.x, 0); tag.scale.set(4, 1, 1); built.grp.add(tag);
+  box(0.16, 0.16, 0.16, 0xe6b450, x, 3.2, z, { emissive: 0xe6b450, ei: 1.5, tex: null });   // a beacon over someone who matters
+  if (Math.hypot(x, z) < 40) light(0xe6b450, 2, x, 3.0, z, 8);
+  const agent = { meta, grp: built.grp, parts: built.parts, facing: built.grp.rotation.y,
+    target: pickWander(), speed: 1, phase: Math.random() * 6.28, amp: 0, state: "idle",
+    greeted: false, stationary: true, purpose: meta.bond || "someone you know" };
+  agents.push(agent);
+  interactables.push({ type: "npc", label: `Speak with ${meta.name}`, pos: built.grp.position,
+    radius: 3.6, mesh: null, meta, agent, run: () => { openDialogue(meta, agent); return {}; } });
+  return agent;
+}
+
+// spawn this protagonist's significant people if their place is this district
+function spawnRelations(g, id, rnd) {
+  const rels = (AXIOM.RELATIONS && AXIOM.RELATIONS[g.proto]) || [];
+  const here = rels.filter((r) => r.where === id);
+  here.forEach((rel, i) => {
+    const meta = People.onePerson(`bond:${g.proto}:${rel.name}`, rel.kind, rel.faction, id);
+    meta.id = `bond_${g.proto}_${id}_${i}`;
+    meta.name = rel.name; meta.role = rel.role; meta.ambient = false;
+    meta.bond = rel.bond; meta.reveal = rel.reveal; meta.dispo = rel.dispo;
+    const a = Math.PI * 0.5 + (i / (here.length + 1)) * Math.PI * 1.5;
+    const r = 17 + i * 3;
+    addNamedAgent(meta, Math.cos(a) * r, Math.sin(a) * r);
+  });
 }
 
 /* ---- STREET LIFE — beggars, hustlers, buskers, drunks who work the corners --
@@ -1859,6 +1892,9 @@ World._dbgYaw = () => yaw;
 World._pos = () => [+player.pos.x.toFixed(2), +player.pos.z.toFixed(2)];
 World._keyDown = (c) => !!keys[c];
 World._colliders = () => colliders.map((c) => [c.x, c.z, c.r]);
+World._bonds = () => agents.filter((a) => a.meta && a.meta.bond).map((a) => a.meta.name + " — " + a.meta.bond);
+World._openBond = () => { const a = agents.find((x) => x.meta && x.meta.bond); if (a) openDialogue(a.meta, a); return a ? a.meta.name : null; };
+World._landmarkLabels = () => interactables.filter((i) => i.type === "landmark").map((i) => i.label);
 World._tp = (x, z, y) => { player.pos.set(x, 1.7, z); if (y !== undefined) yaw = y; };
 World._pokeSocial = () => { for (const a of agents) if (!a.partner) a.socialCD = 0; };
 World._freecam = (x, y, z, yw, pt) => { freeCam = true; player.pos.set(x, y, z); yaw = yw; pitch = pt; };
@@ -2498,6 +2534,27 @@ const THEMES = {
         (g) => Actions.pray(g), 0xe6b450);
       landmark(13, 6, 3, "The place where nothing happens",
         examine("The Quiet Ground", "A patch of the quarter where, by every account anyone can find, violence has simply never occurred. People in extreme distress grow calm here. The temple offers no explanation; it does not call it anything. It only keeps the lamps lit and lets the stones be what they are.", "omen"), 0x9aa6c0);
+
+      // THE CORE SAMPLE — time made literal: a cut shaft exposing the stacked
+      // eras of the city, oldest at the bottom. (Ch.2: time stacks on itself.)
+      const strata = [
+        [0x2a2a30, "Cyber substrate — fibre, coolant, dead screens"],
+        [0xcfd6de, "Corporate slab — poured to erase what it sat on"],
+        [0x6e6a60, "Medieval foundation — fitted stone, no mortar"],
+        [0x9a7a52, "Imperial brick — fired, stamped, taxed"],
+        [0x8a6e4a, "Mudbrick city — the first stacking"],
+        [0x4a3a2a, "Eridu-that-was — drowned on purpose"],
+      ];
+      const csx = -14, csz = 10, segH = 1.7;
+      for (let i = 0; i < strata.length; i++) {
+        const y = 0.2 + (strata.length - 1 - i) * segH + segH / 2;   // oldest at the bottom
+        box(3.2, segH, 3.2, strata[i][0], csx, y, csz, { rough: 1 });
+      }
+      box(3.5, 0.3, 3.5, 0x52535c, csx, 0.15, csz, { tex: "stone" });        // lip of the shaft
+      light(0x9ad0ff, 4, csx, segH * strata.length + 1, csz, 12);
+      landmark(csx, csz, 3.4, "The Core Sample — read the stacked eras",
+        examine("The Core Sample", "A single shaft the temple cut and never filled, exposing the city in cross-section. Read from the bottom up, the strata are: " +
+          strata.slice().reverse().map((s) => s[1]).join("; ") + ". Six cities, one site, each built on the grave of the last — and the deepest layer is older than any god the Crown still names. The future never arrived because the past was never finished here.", "world"), 0x9ad0ff);
       for (let i = 0; i < 6; i++) {                                                // idol statues
         const a = i * Math.PI / 3 + 0.5, r = 11, x = Math.cos(a) * r, z = Math.sin(a) * r;
         box(1, 0.5, 1, 0x52535c, x, 0.25, z, { tex: "stone" });
@@ -3085,7 +3142,33 @@ function revelationModal() {
 /* DIALOGUE — Friendly / Neutral / Trade, with contextual lines & memory.   */
 function dialogOpen() { return !document.getElementById("dialog").hidden; }
 
+// a slow push-in on a person who matters, used for first meetings
+function revealCutscene(agent, title, lines, onEnd) {
+  const p = agent.grp.position;
+  const ang = Math.atan2(player.pos.x - p.x, player.pos.z - p.z);
+  const fx = Math.sin(ang), fz = Math.cos(ang);
+  World.playCutscene({
+    title,
+    shots: [
+      { from: [p.x + fx * 7, 4.5, p.z + fz * 7], to: [p.x + fx * 3.4, 2.5, p.z + fz * 3.4], look: [p.x, 1.75, p.z], dur: 3.2, caption: lines[0] || "" },
+      { from: [p.x + fx * 3.6 + 1.4, 2.1, p.z + fz * 3.6], to: [p.x + fx * 2.6, 1.9, p.z + fz * 2.6], look: [p.x, 1.78, p.z], dur: 2.4, caption: lines[1] || "" },
+    ],
+    onEnd,
+  });
+}
+
 function openDialogue(meta, agent) {
+  const g = State.data;
+  // first time you find someone from your past: a reveal cutscene, then they speak
+  if (meta.bond && (!g.flags.metBond || !g.flags.metBond[meta.id]) && !cine) {
+    (g.flags.metBond = g.flags.metBond || {})[meta.id] = true;
+    Engine.ensureNPC(g, meta.id).disp = meta.dispo || 0;
+    Engine.push(g, `You meet ${meta.name} — ${meta.bond}.`, "crisis");
+    if (g.story) { (g.story.log = g.story.log || []).push({ day: g.day, title: "A face from your past", choice: `${meta.name} — ${meta.bond}`, line: meta.reveal }); }
+    agent._revealNow = meta.reveal;
+    revealCutscene(agent, meta.name, [meta.bond, "A face from your past."], () => openDialogue(meta, agent));
+    return;
+  }
   World._dialog = { meta, agent };
   resetKeys();                                   // stop walking when a chat opens
   if (document.pointerLockElement) document.exitPointerLock();
@@ -3108,9 +3191,10 @@ function renderDialog(greeting) {
   const mc = (MOODS[moodKey] && MOODS[moodKey].c) || "#cdbf9a";
   const doing = d.agent && d.agent.purpose ? ` · <span class="muted">${d.agent.purpose}</span>` : "";
   const life = d.agent ? lifeDesc(d.agent) : "";
+  const bondTag = meta.bond ? ` · <span style="color:#e6b450">${meta.bond}</span>` : "";
   document.getElementById("dlg-role").innerHTML =
     `${meta.role} · ${AXIOM.FACTIONS[meta.faction] || "Unaffiliated"}${origin} — ${pers}` +
-    ` · <span style="color:${mc}">${mood}</span>${doing}` +
+    ` · <span style="color:${mc}">${mood}</span>${doing}${bondTag}` +
     (life ? ` · <span class="muted">${life}</span>` : "");
 
   // standing with this person + their faction
@@ -3126,8 +3210,9 @@ function renderDialog(greeting) {
     `<span class="tier" style="color:${tc}">${tierName[t]} them (${rec.disp})</span>
      <span class="muted" style="margin-left:8px">faction standing: ${fr}</span>${livelihood}`;
 
-  const line = greeting ? People.pickGreet(meta, rec.disp) : (d.lastLine || "");
-  const beat = greeting && MOOD_BEAT[moodKey] ? `<span class="beat">${MOOD_BEAT[moodKey]}</span> ` : "";
+  let line = greeting ? People.pickGreet(meta, rec.disp) : (d.lastLine || "");
+  let beat = greeting && MOOD_BEAT[moodKey] ? `<span class="beat">${MOOD_BEAT[moodKey]}</span> ` : "";
+  if (d.agent && d.agent._revealNow) { line = d.agent._revealNow; d.agent._revealNow = null; beat = ""; }  // the moment of recognition
   document.getElementById("dlg-line").innerHTML = beat + line.replace(/[<>]/g, "");
 
   const tradeBtn = document.getElementById("dlg-trade");
