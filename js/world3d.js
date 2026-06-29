@@ -37,6 +37,39 @@ const BOUND = 27;         // half-size of a district plot
 let colliders = [];
 function addCollider(x, z, r) { colliders.push({ x, z, r }); }
 
+/* points of interest NPCs travel to as they go about their day */
+let pois = [];
+function nearestPOI(type, x, z) {
+  let best = null, bd = Infinity;
+  for (const p of pois) { if (p.type !== type) continue; const d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; best = p; } }
+  return best;
+}
+function randomPOI(types) {
+  const c = pois.filter((p) => types.includes(p.type));
+  return c.length ? c[(Math.random() * c.length) | 0] : null;
+}
+// derive POIs from the interactables placed during the build
+function buildPOIs() {
+  pois = [];
+  for (const it of interactables) {
+    const p = it.pos; if (!p) continue;
+    const t = it.type;
+    if (t === "eat") pois.push({ type: "food", x: p.x, z: p.z, label: it.label });
+    else if (t === "sleep") pois.push({ type: "rest", x: p.x, z: p.z, label: it.label });
+    else if (t === "work" || t === "clinic") pois.push({ type: "work", x: p.x, z: p.z, label: it.label });
+    else if (t === "market") pois.push({ type: "market", x: p.x, z: p.z, label: it.label });
+    else if (t === "train") pois.push({ type: "work", x: p.x, z: p.z, label: it.label });
+    else if (t === "omen") pois.push({ type: "pray", x: p.x, z: p.z, label: it.label });
+    else if (t === "gate") pois.push({ type: "gate", x: p.x, z: p.z, label: it.label });
+    else if (t === "enter") {
+      const home = /Home|Tenement|Apartment|House|Barracks/i.test(it.label);
+      pois.push({ type: home ? "home" : "work", x: p.x, z: p.z, label: it.label });
+    } else if (t === "landmark" && /Ziggurat|Temple|Altar|God|Shrine/i.test(it.label)) {
+      pois.push({ type: "pray", x: p.x, z: p.z, label: it.label });
+    }
+  }
+}
+
 /* interior (walk-in building) state */
 let inInterior = false;
 let interiorSpec = null;
@@ -859,6 +892,9 @@ World.buildDistrict = function (id, spawnCenter) {
       pos: new THREE.Vector3(ux, 1, uz), radius: 4, mesh: null, run: () => { World.openCrime(); return {}; } });
   }
 
+  // collect the destinations people travel to as they go about their day
+  buildPOIs();
+
   // spawn
   if (spawnCenter) { player.pos.set(0, 1.7, 11.5); yaw = Math.PI; pitch = 0; }
   player.vel.set(0, 0, 0);
@@ -1134,9 +1170,12 @@ function addStreetAgent(meta, x, z, facing, pose, stationary, baseY, rnd) {
   built.grp.position.set(x, baseY || 0, z); built.grp.rotation.y = facing; scene.add(built.grp);
   const tag = makeLabel(meta.name, "#cdbf9a");
   tag.position.set(0, 2.05 / built.grp.scale.x, 0); tag.scale.set(3.4, 0.85, 1); built.grp.add(tag);
+  const STREET_PURPOSE = { beg: "begging at the corner", solicit: "working the corner",
+    busk: "busking for coin", preach: "preaching to passers-by", hawk: "hawking wares",
+    drunk: "drinking the day away", lurk: "watching for an easy mark" };
   const agent = { meta, grp: built.grp, parts: built.parts, facing, target: pickWander(rnd),
     speed: 0.5 + rnd() * 0.5, phase: rnd() * 6.28, amp: 0, state: stationary ? "idle" : "wander",
-    greeted: false, stationary, pose, baseY: baseY || 0 };
+    greeted: false, stationary, pose, baseY: baseY || 0, purpose: STREET_PURPOSE[pose] || "passing the time" };
   agents.push(agent);
   interactables.push({ type: "npc", label: `Speak with ${meta.name}`, pos: built.grp.position,
     radius: 3.3, mesh: null, meta, agent, run: () => { openDialogue(meta, agent); return {}; } });
@@ -1782,6 +1821,8 @@ World._pokeSocial = () => { for (const a of agents) if (!a.partner) a.socialCD =
 World._freecam = (x, y, z, yw, pt) => { freeCam = true; player.pos.set(x, y, z); yaw = yw; pitch = pt; };
 World._agentStates = () => agents.map((a) => a.state);
 World._moods = () => agents.map((a) => a.moodKey || a.baseMoodKey);
+World._purposes = () => agents.map((a) => a.purpose || "?");
+World._poiCount = () => pois.length;
 World._vehicles = () => vehicles.map((v) => [v.grp.position.x.toFixed(1), v.grp.position.z.toFixed(1), v.kind || (v.drone ? "drone" : "?")]);
 World._cityCars = () => cityTrafficData.length;
 World._enterables = () => interactables.filter((i) => i.type === "enter").map((i) => i.label);
@@ -1963,6 +2004,25 @@ function poseAnim(ag, P) {
       P.llegPivot.rotation.x = 1.1; P.rlegPivot.rotation.x = 1.1;
       if (P.lknee) P.lknee.rotation.x = 1.3; if (P.rknee) P.rknee.rotation.x = 1.3;
       break;
+    case "work":          // labouring at a bench: forearms pumping, leaning in
+      ag.grp.rotation.x = 0.13;
+      P.larmPivot.rotation.x = -0.8 + Math.sin(t * 6) * 0.4;
+      P.rarmPivot.rotation.x = -0.8 - Math.sin(t * 6) * 0.4;
+      if (P.lelbow) P.lelbow.rotation.x = 0.8; if (P.relbow) P.relbow.rotation.x = 0.8;
+      break;
+    case "pray":          // kneeling, hands raised together, head bowed
+      P.llegPivot.rotation.x = 1.2; P.rlegPivot.rotation.x = 1.2;
+      if (P.lknee) P.lknee.rotation.x = 1.4; if (P.rknee) P.rknee.rotation.x = 1.4;
+      P.larmPivot.rotation.x = -1.35 + Math.sin(t * 1.4) * 0.05; P.rarmPivot.rotation.x = -1.35 + Math.sin(t * 1.4) * 0.05;
+      break;
+    case "eat":           // hand to the mouth
+      P.rarmPivot.rotation.x = -1.5 + Math.sin(t * 3) * 0.5;
+      if (P.relbow) P.relbow.rotation.x = 1.3;
+      break;
+    case "rest":          // slumped, weight settled, head dipped
+      ag.grp.rotation.x = 0.06;
+      P.larmPivot.rotation.x = 0.04; P.rarmPivot.rotation.x = -0.04;
+      break;
     case "solicit":       // hip-cocked lean, a slow beckoning hand
       ag.grp.rotation.z = 0.12;
       P.rarmPivot.rotation.z = 0.5;
@@ -1990,10 +2050,80 @@ function poseAnim(ag, P) {
   }
 }
 
+/* ======================================================================== */
+/* PURPOSE — every NPC follows a daily routine, travelling between the places  */
+/* their life is made of and performing a real activity when they arrive.      */
+function routineOf(kind) {
+  if (kind === "merchant" || kind === "hawker") return "tend";
+  if (kind === "devotee" || kind === "pilgrim" || kind === "priest" || kind === "guide") return "pray";
+  if (kind === "soldier" || kind === "guard") return "patrol";
+  if (kind === "drunk" || kind === "vagrant" || kind === "cutpurse" || kind === "addict" || kind === "smuggler") return "loiter";
+  return "work";                                   // labourers, scribes, the augmented, &c.
+}
+function dayPeriod(g) {
+  const h = g.hour == null ? 12 : g.hour;
+  if (h < 5 || h >= 21) return "night";
+  if (h < 11) return "morning";
+  if (h < 14) return "midday";
+  if (h < 18) return "afternoon";
+  return "evening";
+}
+const PURPOSE_GO = { work: "heading to work", food: "going to eat", rest: "going home to rest",
+  home: "heading home", market: "off to the market", pray: "going to pray", patrol: "on patrol",
+  social: "out for a walk", wander: "wandering the streets", tend: "off to the stall" };
+const PURPOSE_DO = { work: "working", food: "eating", rest: "resting at home", home: "at home",
+  market: "browsing the market", pray: "at prayer", patrol: "standing watch", social: "taking the air",
+  wander: "loitering", tend: "tending a stall" };
+const ACT_POSE = { work: "work", food: "eat", rest: "rest", home: "rest", pray: "pray",
+  market: null, tend: "hawk", patrol: null, social: null, wander: null };
+
+function goalTypeFor(ag, g) {
+  const per = dayPeriod(g), r = Math.random();
+  switch (ag.routine) {
+    case "tend":   return per === "night" ? "home" : "market";
+    case "pray":   return per === "night" ? "home" : "pray";
+    case "patrol": return "patrol";
+    case "loiter": return ["market", "food", "social", "wander"][(r * 4) | 0];
+    default:       // worker
+      if (per === "night")     return r < 0.7 ? "home" : "rest";
+      if (per === "morning")   return r < 0.7 ? "work" : "food";
+      if (per === "midday")    return r < 0.5 ? "work" : "food";
+      if (per === "afternoon") return r < 0.85 ? "work" : "market";
+      return ["market", "food", "home", "social"][(r * 4) | 0];   // evening
+  }
+}
+function chooseGoal(ag, g) {
+  if (ag.routine == null) ag.routine = routineOf(ag.meta.kind);
+  ag.activityT = 0;
+  const gp = ag.grp.position;
+  let type = goalTypeFor(ag, g), poi = null;
+  if (type === "home") {
+    if (!ag.home) ag.home = nearestPOI("home", gp.x, gp.z) || { x: gp.x, z: gp.z, type: "home", label: "home" };
+    poi = ag.home;
+  } else if (type === "patrol") poi = randomPOI(["gate", "market", "work"]);
+  else if (type === "social" || type === "wander") { const w = pickWander(); poi = { x: w.x, z: w.z, label: "the streets" }; }
+  else poi = nearestPOI(type, gp.x, gp.z);
+  if (!poi) { const w = pickWander(); poi = { x: w.x, z: w.z, label: "the streets" }; type = "wander"; }
+  ag.goal = poi; ag.goalType = type;
+  ag.purpose = PURPOSE_GO[type] || "wandering";
+}
+function startActivity(ag) {
+  const ty = ag.goalType;
+  let dur = { work: 10 + Math.random() * 8, pray: 8 + Math.random() * 6, food: 5 + Math.random() * 4,
+    rest: 12 + Math.random() * 10, market: 6 + Math.random() * 6, home: 8 + Math.random() * 8,
+    patrol: 0.4, social: 3 + Math.random() * 4, wander: 1 }[ty] || 5;
+  let pose = ACT_POSE[ty] || null;
+  if (ag.routine === "tend" && ty === "market") { dur = 12 + Math.random() * 8; pose = "hawk"; }
+  if (ag.routine === "loiter" && (ty === "social" || ty === "wander")) { pose = ag.basePose; }
+  ag.activityT = dur; ag.activityPose = pose;
+  ag.purpose = PURPOSE_DO[ty] || ag.purpose;
+}
+
 function updateAgents(dt) {
   const dlgAgent = World._dialog && World._dialog.agent;
   for (const ag of agents) {
     if (ag.socialCD != null && !ag.partner) ag.socialCD -= dt;  // tick conversation cooldown
+    if (ag.basePose === undefined) ag.basePose = ag.pose || null;   // remember street-life's standing pose
     if (ag.state === "frozen") { // inspector pose: gentle idle only
       ag.idle = (ag.idle || 0) + dt; const br = Math.sin(ag.idle * 1.6) * 0.04;
       ag.parts.larmPivot.rotation.x = br; ag.parts.rarmPivot.rotation.x = -br;
@@ -2031,14 +2161,18 @@ function updateAgents(dt) {
       ag.state = "idle"; targetFacing = ag.facing;
       maybeSocialise(ag);
     } else {
-      ag.state = "wander";
-      // brief pauses make wandering read as natural, not robotic
-      if (ag.pause > 0) { ag.pause -= dt; targetFacing = ag.facing; }
-      else {
-        const dx = ag.target.x - gp.x, dz = ag.target.z - gp.z;
-        const d = Math.hypot(dx, dz);
-        if (d < 1.0) { ag.target = pickWander(); ag.pause = Math.random() < 0.5 ? 0.6 + Math.random() * 2.2 : 0; }
+      // purpose: walk to the current goal, then perform a real activity there
+      if (!ag.goal) chooseGoal(ag, State.data);
+      if (ag.activityT > 0) {                          // performing an activity
+        ag.state = "busy"; targetFacing = ag.facing; ag.activityT -= dt;
+        ag.pose = ag.activityPose || null;
+        if (ag.activityT <= 0) { ag.pose = ag.basePose; chooseGoal(ag, State.data); }
+      } else {                                          // travelling to the goal
+        ag.pose = ag.basePose;
+        const dx = ag.goal.x - gp.x, dz = ag.goal.z - gp.z, d = Math.hypot(dx, dz);
+        if (d < 1.4) { startActivity(ag); }
         else {
+          ag.state = "wander";
           const step = ag.speed * dt;
           gp.x += (dx / d) * step; gp.z += (dz / d) * step;
           moving = true; targetFacing = Math.atan2(dx, dz);
@@ -2742,9 +2876,10 @@ function renderDialog(greeting) {
   const moodKey = (d.agent && (d.agent.moodKey || d.agent.baseMoodKey)) || "content";
   const mood = MOOD_WORD[moodKey] || "at ease";
   const mc = (MOODS[moodKey] && MOODS[moodKey].c) || "#cdbf9a";
+  const doing = d.agent && d.agent.purpose ? ` · <span class="muted">${d.agent.purpose}</span>` : "";
   document.getElementById("dlg-role").innerHTML =
     `${meta.role} · ${AXIOM.FACTIONS[meta.faction] || "Unaffiliated"}${origin} — ${pers}` +
-    ` · <span style="color:${mc}">${mood}</span>`;
+    ` · <span style="color:${mc}">${mood}</span>${doing}`;
 
   // standing with this person + their faction
   const tierName = ["marked", "disliked", "known to", "trusted by", "honored by"];
