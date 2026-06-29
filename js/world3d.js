@@ -33,6 +33,10 @@ let toastTimer = 0;
 const ACTIVATE = 4.2;     // proximity radius to interact
 const BOUND = 27;         // half-size of a district plot
 
+/* solid building footprints the player can't walk through (outdoor only) */
+let colliders = [];
+function addCollider(x, z, r) { colliders.push({ x, z, r }); }
+
 /* interior (walk-in building) state */
 let inInterior = false;
 let interiorSpec = null;
@@ -89,7 +93,7 @@ World.init = function () {
   });
   addEventListener("keyup", (e) => { keys[e.code] = false; });
   // Never let a key get "stuck" when the tab/window loses focus mid-press.
-  const clearKeys = () => { for (const k in keys) keys[k] = false; dragging = false; canvas.classList.remove("grabbing"); };
+  const clearKeys = () => { resetKeys(); dragging = false; canvas.classList.remove("grabbing"); };
   addEventListener("blur", clearKeys);
   document.addEventListener("visibilitychange", () => { if (document.hidden) clearKeys(); });
 
@@ -718,7 +722,7 @@ World.buildDistrict = function (id, spawnCenter) {
   const rnd = mulberry32(hash(id));
   const theme = THEMES[id] || THEMES._default;
   currentDistrictId = id;
-  inRegion = false; inInterior = false;
+  inRegion = false; inInterior = false; colliders = [];
 
   scene.background = new THREE.Color(theme.sky);
   scene.fog = new THREE.Fog(theme.sky, theme.fogNear, theme.fogFar);
@@ -1552,6 +1556,7 @@ function genInterior(type, era, seed) {
 function registerBuilding(x, z, w, label, type, era) {
   const pal = ERA_PAL[era] || ERA_PAL.cyber;
   const dc = pal.glow ? pal.screen : 0xffcf80;
+  addCollider(x, z, w / 2 + 0.3);                         // solid footprint
   box(1.0, 1.9, 0.14, dc, x, 0.95, z + w / 2 + 0.07, { emissive: dc, ei: pal.glow ? 0.9 : 0.4, tex: null });
   interactables.push({
     type: "enter", label: `Enter — ${label}`, pos: new THREE.Vector3(x, 1, z + w / 2 + 1),
@@ -1737,6 +1742,7 @@ World._focusLabel = () => focus ? focus.label : null;
 World._dbgYaw = () => yaw;
 World._pos = () => [+player.pos.x.toFixed(2), +player.pos.z.toFixed(2)];
 World._keyDown = (c) => !!keys[c];
+World._colliders = () => colliders.map((c) => [c.x, c.z, c.r]);
 World._tp = (x, z, y) => { player.pos.set(x, 1.7, z); if (y !== undefined) yaw = y; };
 World._pokeSocial = () => { for (const a of agents) if (!a.partner) a.socialCD = 0; };
 World._freecam = (x, y, z, yw, pt) => { freeCam = true; player.pos.set(x, y, z); yaw = yw; pitch = pt; };
@@ -2335,6 +2341,14 @@ function updateMovement(dt) {
   const b = inInterior ? INNER : BOUND;
   player.pos.x = Math.max(-b + 1.5, Math.min(b - 1.5, player.pos.x));
   player.pos.z = Math.max(-b + 1.5, Math.min(b - 1.5, player.pos.z));
+  // push out of solid building footprints so you can't walk through them
+  if (!inInterior && !inRegion) {
+    for (const c of colliders) {
+      const dx = player.pos.x - c.x, dz = player.pos.z - c.z;
+      const d = Math.hypot(dx, dz), min = c.r + 0.5;
+      if (d < min && d > 1e-4) { player.pos.x = c.x + (dx / d) * min; player.pos.z = c.z + (dz / d) * min; }
+    }
+  }
   player.pos.y = (inInterior ? currentFloorY : 0) + 1.7;
 }
 
@@ -2424,11 +2438,13 @@ World.updateHUD = function () {
 /* ======================================================================== */
 /* Panels (cursor released)                                                 */
 function panelsOpen() { return !document.getElementById("panels").hidden; }
+function resetKeys() { for (const k in keys) keys[k] = false; }   // drop any held key
 
 World.togglePanels = function (force) {
   const panels = document.getElementById("panels");
   const open = force === undefined ? panels.hidden : force;
   panels.hidden = !open;
+  resetKeys();                                   // never resume-walk after a panel
   if (open) {
     if (document.pointerLockElement) document.exitPointerLock();
     World.showPanel(World._tab || "skills");
@@ -2568,6 +2584,7 @@ function dialogOpen() { return !document.getElementById("dialog").hidden; }
 
 function openDialogue(meta, agent) {
   World._dialog = { meta, agent };
+  resetKeys();                                   // stop walking when a chat opens
   if (document.pointerLockElement) document.exitPointerLock();
   document.getElementById("dialog").hidden = false;
   drawPortrait(meta.appear);
