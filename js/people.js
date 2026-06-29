@@ -206,6 +206,32 @@ AXIOM.DIALOGUE = {
     greet: { hostile: ["\"City manners. I have no use for them or for you.\""], neutral: ["\"I am far from the grass. Speak straight; I've no patience for city circling.\""], friendly: ["\"You speak plainly. Good. The confederations value that above gold.\""] },
     Friendly: ["\"Could you ride, fight, and navigate, my people would have use for you. Coin means nothing to us.\""], Neutral: ["\"The law-speakers hold a thousand years of law in memory alone. Your city writes everything and remembers nothing.\""], Trade: ["\"Horses, hides, knowledge of the routes. None of it sold the way cities sell.\""] },
 
+  /* --- street life --- */
+  beggar: { personality: "wretched, watchful", role: "beggar",
+    greet: { hostile: ["A cracked palm lifts. \"Don't kick me, lord. I've been kicked enough today.\""], neutral: ["\"Spare a coin? A crust? A kind word costs you nothing and I'll take even that.\""], friendly: ["\"You — you stopped before. Bless you. Few do.\""] },
+    Friendly: ["\"You've a soft heart in a hard city. I won't forget the face that fed me.\""], Neutral: ["\"I see who comes and goes from these corners. More than the guards do.\""], Trade: ["\"Sell? Ha. I've the clothes on my back and they're not for sale yet.\""] },
+  solicitor: { personality: "knowing, tired beneath the smile", role: "of the night trade",
+    greet: { hostile: ["\"Not in the mood? Pity. Move along then, love.\""], neutral: ["A slow smile, a tilt of the hip. \"Lonely night, stranger? Company's for sale, if the coin's right.\""], friendly: ["\"Back again? You know where to find me. The corner's always warm.\""] },
+    Friendly: ["\"You treat me like a person, not a purchase. That buys you more than coin ever could.\""], Neutral: ["\"Everyone on this street is selling something. I'm just honest about my stall.\""], Trade: ["\"Company, an ear, a warm doorway out of the rain. We can come to terms.\""] },
+  busker: { personality: "bright, half-starved", role: "street musician",
+    greet: { hostile: ["The playing stops. \"No request? Then no need to glare.\""], neutral: ["\"A tune for a coin, friend. The acoustics off these walls are better than any hall.\""], friendly: ["\"Ah, my patron returns! This next one's for you.\""] },
+    Friendly: ["\"Drop a coin in the cup and I'll play your name into a song the whole street learns.\""], Neutral: ["\"Play loud enough and the guards leave you be. Play badly and so does everyone.\""], Trade: ["\"I sell songs, and the first verse is always free. The rest is a coin.\""] },
+  drunk: { personality: "maudlin, unguarded", role: "the soused",
+    greet: { hostile: ["\"Whass your problem, eh? I'm — I'm allowed to stand here.\""], neutral: ["A sway, a hiccup. \"Friend! Have you — have you seen my dignity? Lost it round here somewhere.\""], friendly: ["\"Iss YOU. My best friend in the whole rotten city. Buy you a drink? ...you buy?\""] },
+    Friendly: ["\"You're the only honest soul left, you know that? The ONLY one.\""], Neutral: ["\"The wine here's vinegar but it does the job and the job is forgetting.\""], Trade: ["\"Got half a bottle and no shame. Swap you for a full one?\""] },
+  preacher: { personality: "fervent, certain", role: "street prophet",
+    greet: { hostile: ["\"Scoff now! You'll not scoff when the omens come due!\""], neutral: ["An arm thrown skyward. \"The ancient ones never left, friend! They sleep beneath us and they are STIRRING!\""], friendly: ["\"A listener! The gods send me one true ear at last.\""] },
+    Friendly: ["\"Heed me and you'll read the signs before the city burns by them. That's no small gift.\""], Neutral: ["\"They paved over the old temples. You don't pave over what's underneath. You only hide it.\""], Trade: ["\"I sell nothing but warning, and warning I give free.\""] },
+  hawker: { personality: "loud, relentless", role: "street vendor",
+    greet: { hostile: ["\"No browse, no business — but you'll want this later, mark me!\""], neutral: ["\"Fresh off the caravans! Charms, trinkets, fixes for what ails you — name your need!\""], friendly: ["\"My favorite face! For you, the good stock, from under the counter.\""] },
+    Friendly: ["\"You I give the real price, not the street price. Don't tell the others.\""], Neutral: ["\"Stand a cart on a corner long enough, you hear every secret the city keeps.\""], Trade: ["\"NOW you're talking sense. Step close, mind the cart, let's deal.\""] },
+  cutpurse: { personality: "shifty, quick", role: "loiterer",
+    greet: { hostile: ["Eyes dart to your purse, then away. \"...wasn't doing nothing.\""], neutral: ["\"Keep your coin close round here, friend. Lotta light fingers about. Not me. Others.\""], friendly: ["\"You're sharp. I like sharp. Sharp people and I get along — or stay clear, smart-like.\""] },
+    Friendly: ["\"You ever need a thing to vanish, or a pocket picked that isn't yours to pick — you know a face now.\""], Neutral: ["\"I just watch the corners. What people drop, what they don't miss. It's a living.\""], Trade: ["\"Got a few things. Don't ask where from and I won't ask where to.\""] },
+  addict: { personality: "wired, fraying", role: "the strung-out",
+    greet: { hostile: ["Their optics stutter. \"Don't — don't crowd me, I'm fine, I'm FINE.\""], neutral: ["\"You holding? No? S'fine, s'fine. Just the shakes. The grid does it. The grid does it to all of us.\""], friendly: ["\"Hey. Hey. You're alright. You got a steady face. I like a steady face.\""] },
+    Friendly: ["\"You don't look at me like garbage. I'll remember that when I'm clear. If I get clear.\""], Neutral: ["\"Cheap augments, cheaper coolant. It eats you from the inside but it's so quiet in here now.\""], Trade: ["\"Sell you my jacket? My boots? Anything. Just — anything, come on.\""] },
+
   /* fallback */
   _default: { personality: "ordinary",
     greet: { hostile: ["\"...what do you want?\""], neutral: ["\"Yes? I'm busy.\""], friendly: ["\"Oh — hello again.\""] },
@@ -251,6 +277,8 @@ People.appearance = function (rnd, faction, kind, origin) {
   if (kind === "soldier" || kind === "guard") build = rnd() > 0.4 ? "muscular" : "tall";
   if (kind === "vagrant") build = rnd() > 0.5 ? "thin" : "short";
   if (kind === "warlord") build = "muscular";
+  if (kind === "beggar" || kind === "drunk" || kind === "addict") build = rnd() > 0.5 ? "thin" : "short";
+  if (kind === "solicitor") build = rnd() > 0.5 ? "average" : "tall";
   const palette = (B.cloth[faction] || B.cloth.none).slice();
   // origin tints one garment with the home region's accent colour
   const reg = origin && AXIOM.REGIONS[origin];

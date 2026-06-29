@@ -797,6 +797,7 @@ World.buildDistrict = function (id, spawnCenter) {
   // populate the district with people, set the streets in motion, and surround
   // it with the vast city that stretches to the horizon in every direction
   spawnPeople(g, id, rnd);
+  spawnStreetLife(g, id, rnd);
   spawnTraffic(id, Engine.isNight(g));
   if (id !== "sub_strata") buildSurroundCity(theme, Engine.isNight(g));
   buildRoads(id);
@@ -1062,6 +1063,67 @@ function spawnPeople(g, id, rnd) {
       run: () => { openDialogue(meta, agent); return {}; },
     });
   });
+}
+
+/* ---- STREET LIFE — beggars, hustlers, buskers, drunks who work the corners --
+ * They loiter at lane intersections in poses that read at a glance, hold their
+ * own seeded identity & dialogue, and react to you like anyone else.         */
+const STREET_LIFE = {
+  ziggurat_crown: ["beggar", "hawker", "preacher", "busker", "beggar"],
+  hanging_market: ["hawker", "beggar", "busker", "cutpurse", "solicitor", "hawker"],
+  god_quarter:    ["beggar", "preacher", "beggar"],
+  ironwall:       ["beggar", "cutpurse", "drunk", "solicitor", "hawker"],
+  broken_crown:   ["beggar", "drunk", "solicitor", "cutpurse", "hawker", "busker"],
+  neon_labyrinth: ["solicitor", "addict", "busker", "cutpurse", "hawker", "drunk", "beggar"],
+  spire:          ["hawker", "busker"],
+  sub_strata:     ["beggar", "drunk", "cutpurse"],
+};
+const STREET_N = { neon_labyrinth: 18, broken_crown: 16, hanging_market: 14, ironwall: 12,
+  sub_strata: 10, ziggurat_crown: 8, god_quarter: 6, spire: 5 };
+const STREET_POSE = { beggar: "beg", solicitor: "solicit", busker: "busk", drunk: "drunk",
+  preacher: "preach", hawker: "hawk", cutpurse: "lurk", addict: "drunk" };
+const STREET_WANDER = { drunk: 1, addict: 1, cutpurse: 1 };  // these roam; others hold a corner
+
+function streetCorners(rnd) {
+  const bands = [6.6, 13.2, 19.8], cs = [];
+  for (const xs of [1, -1]) for (const zs of [1, -1]) for (const bx of bands) for (const bz of bands) cs.push([xs * bx, zs * bz]);
+  for (let i = cs.length - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; const t = cs[i]; cs[i] = cs[j]; cs[j] = t; }
+  return cs;
+}
+
+function addStreetAgent(meta, x, z, facing, pose, stationary, baseY, rnd) {
+  const built = makeHuman(meta.appear);
+  built.grp.position.set(x, baseY || 0, z); built.grp.rotation.y = facing; scene.add(built.grp);
+  const tag = makeLabel(meta.name, "#cdbf9a");
+  tag.position.set(0, 2.05 / built.grp.scale.x, 0); tag.scale.set(3.4, 0.85, 1); built.grp.add(tag);
+  const agent = { meta, grp: built.grp, parts: built.parts, facing, target: pickWander(rnd),
+    speed: 0.5 + rnd() * 0.5, phase: rnd() * 6.28, amp: 0, state: stationary ? "idle" : "wander",
+    greeted: false, stationary, pose, baseY: baseY || 0 };
+  agents.push(agent);
+  interactables.push({ type: "npc", label: `Speak with ${meta.name}`, pos: built.grp.position,
+    radius: 3.3, mesh: null, meta, agent, run: () => { openDialogue(meta, agent); return {}; } });
+  return agent;
+}
+
+function spawnStreetLife(g, id, rnd) {
+  const kinds = STREET_LIFE[id]; if (!kinds) return;
+  const N = STREET_N[id] || 8;
+  const fac = People.districtFaction[id] || "none";
+  const night = Engine.isNight(g);
+  const corners = streetCorners(rnd);
+  for (let i = 0; i < N; i++) {
+    const kind = kinds[(rnd() * kinds.length) | 0];
+    const c = corners[i % corners.length];
+    const x = c[0] - Math.sign(c[0]) * 2.2 + (rnd() - 0.5) * 1.2;
+    const z = c[1] - Math.sign(c[1]) * 2.2 + (rnd() - 0.5) * 1.2;
+    const facing = Math.atan2(-x, -z) + (rnd() - 0.5);     // roughly face the street
+    const meta = People.onePerson(`street:${id}:${i}`, kind, fac, id);
+    meta.role = (People.pool(kind) && People.pool(kind).role) || meta.role;
+    if (kind === "beggar" || kind === "drunk" || kind === "addict") { meta.appear.cloth = 0x5a4a38; meta.appear.cloak = true; meta.appear.scarf = false; }
+    if (kind === "solicitor") { meta.appear.cloth2 = night ? 0xff5c7a : 0xc850ff; meta.appear.accent = 0xff5c7a; meta.appear.cloak = false; }
+    addStreetAgent(meta, x, z, facing, STREET_POSE[kind] || "idle", !STREET_WANDER[kind],
+      kind === "beggar" ? -0.32 : 0, rnd);
+  }
 }
 
 /* ======================================================================== */
@@ -1738,6 +1800,43 @@ function maybeSocialise(ag) {
   }
 }
 
+// Distinct, readable street poses driven each frame off ag.pose.
+function poseAnim(ag, P) {
+  const t = ag.idle || 0;
+  switch (ag.pose) {
+    case "beg":           // kneeling, a cupped hand held out, faint tremble
+      P.larmPivot.rotation.x = -1.25 + Math.sin(t * 2.0) * 0.06;
+      P.rarmPivot.rotation.x = -1.15 + Math.cos(t * 2.3) * 0.06;
+      P.llegPivot.rotation.x = 1.1; P.rlegPivot.rotation.x = 1.1;
+      if (P.lknee) P.lknee.rotation.x = 1.3; if (P.rknee) P.rknee.rotation.x = 1.3;
+      break;
+    case "solicit":       // hip-cocked lean, a slow beckoning hand
+      ag.grp.rotation.z = 0.12;
+      P.rarmPivot.rotation.z = 0.5;
+      P.larmPivot.rotation.x = -0.5 + Math.sin(t * 2.5) * 0.5;
+      break;
+    case "busk":          // both hands up, playing, gentle body sway
+      P.larmPivot.rotation.x = -0.9 + Math.sin(t * 4.0) * 0.18;
+      P.rarmPivot.rotation.x = -0.9 - Math.sin(t * 4.0) * 0.18;
+      ag.grp.rotation.z = Math.sin(t * 1.5) * 0.05;
+      break;
+    case "preach":        // one arm thrown high, declaiming
+      P.rarmPivot.rotation.x = -2.5 + Math.sin(t * 3.0) * 0.25;
+      P.larmPivot.rotation.x = -0.2;
+      break;
+    case "hawk":          // an arm waving to flag passers-by
+      P.rarmPivot.rotation.x = -1.6 + Math.sin(t * 5.0) * 0.5;
+      break;
+    case "drunk":         // unsteady sway and a lolling head
+      ag.grp.rotation.z = Math.sin(t * 1.3) * 0.16;
+      if (P.head) P.head.rotation.z = Math.sin(t * 1.1) * 0.2;
+      break;
+    case "lurk":          // hunched, shifty
+      ag.grp.rotation.x = 0.09;
+      break;
+  }
+}
+
 function updateAgents(dt) {
   const dlgAgent = World._dialog && World._dialog.agent;
   for (const ag of agents) {
@@ -1829,6 +1928,10 @@ function updateAgents(dt) {
       P.larmPivot.rotation.x = 0.06 + Math.sin(ag.idle * 2.2) * 0.06;
       if (P.relbow) P.relbow.rotation.x = 0.45 + Math.max(0, gh) * 0.6;
     }
+
+    // street-life poses (begging, soliciting, busking, preaching, drunk sway…)
+    if (ag.pose && ag.state !== "talk" && ag.state !== "approach") poseAnim(ag, P);
+    else if (ag.pose) { ag.grp.rotation.x = 0; ag.grp.rotation.z = 0; }
 
     // head turns toward you when you're near (reacting to your approach)
     if (P.head) {
