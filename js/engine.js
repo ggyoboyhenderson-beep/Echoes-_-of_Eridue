@@ -426,9 +426,113 @@ Engine.newDay = function (g) {
   }
   // Notoriety fades if you lie low; faster on the road, slower while infamous.
   if (g.heat > 0) { Engine.coolHeat(g, 4); if (g.heat <= 0) Engine.push(g, "The heat on you has cooled. You can move freely again.", "world"); }
+  // The balance of power shifts: elections, coups, pacts, edicts, wars.
+  Engine.politicsTick(g);
   // Reactive storylines react to a new day, if the system is present.
   if (typeof Story !== "undefined" && Story.onNewDay) Story.onNewDay(g);
   Engine.push(g, `Day ${g.day} begins. ${AXIOM.WEATHER[g.weather].name}.`, "day");
+};
+
+/* ==========================================================================
+ * POLITICS — a living balance of power across all eras of the city.
+ * ========================================================================== */
+Engine.initPolitics = function (g) {
+  if (g.politics) return g.politics;
+  const P = AXIOM.POLITICS, power = {}, control = {}, relations = {};
+  for (const f in P.factions) power[f] = 42 + Math.round(P.factions[f].ambition * 30);
+  for (const d in P.regimes) control[d] = P.regimes[d].faction;
+  // seed relations from declared rivals / allies
+  const rel = (a, b, v) => { relations[a < b ? a + "|" + b : b + "|" + a] = v; };
+  for (const f in P.factions) {
+    for (const r of P.factions[f].rivals) rel(f, r, -45 - Engine.rand(20));
+    for (const a of P.factions[f].allies) rel(f, a, 40 + Engine.rand(20));
+  }
+  g.politics = { power, control, relations, climate: "an uneasy balance", events: [], pendingNews: null };
+  return g.politics;
+};
+Engine.relation = function (g, a, b) {
+  if (a === b) return 100;
+  const k = a < b ? a + "|" + b : b + "|" + a;
+  return g.politics.relations[k] || 0;
+};
+Engine.setRelation = function (g, a, b, v) {
+  const k = a < b ? a + "|" + b : b + "|" + a;
+  g.politics.relations[k] = Engine.clamp(v, -100, 100);
+};
+Engine.controllerOf = function (g, district) {
+  return (g.politics && g.politics.control[district]) || (AXIOM.POLITICS.regimes[district] && AXIOM.POLITICS.regimes[district].faction);
+};
+Engine.factionFullName = function (f) { return (AXIOM.FACTIONS && AXIOM.FACTIONS[f]) || f; };
+Engine._logPolitics = function (g, headline, detail) {
+  g.politics.events.unshift({ day: g.day, headline, detail });
+  if (g.politics.events.length > 10) g.politics.events.pop();
+  Engine.push(g, headline + (detail ? " — " + detail : ""), "world");
+  g.politics.pendingNews = { headline, lines: detail ? [detail] : [] };
+};
+Engine.politicsTick = function (g) {
+  const pol = Engine.initPolitics(g), P = AXIOM.POLITICS, fkeys = Object.keys(P.factions);
+  // power drifts toward each faction's ambition, nudged by what you've done for them
+  for (const f of fkeys) {
+    const base = 42 + P.factions[f].ambition * 30;
+    let p = pol.power[f] + (base - pol.power[f]) * 0.08 + (Engine.rand(7) - 3);
+    p += Math.sign(Engine.factionRep(g, f)) * Math.min(3, Math.abs(Engine.factionRep(g, f)) / 20); // your influence
+    pol.power[f] = Engine.clamp(p, 5, 100);
+  }
+  // relations creep back toward their natural rival/ally baseline
+  for (const k in pol.relations) {
+    const [a, b] = k.split("|");
+    const rivals = P.factions[a].rivals.includes(b), allies = P.factions[a].allies.includes(b);
+    const target = rivals ? -55 : allies ? 50 : 0;
+    pol.relations[k] = Engine.clamp(pol.relations[k] + (target - pol.relations[k]) * 0.06 + (Engine.rand(7) - 3), -100, 100);
+  }
+  // a political event most days
+  if (!Engine.chance(0.62)) return;
+  const owns = (f) => Object.values(pol.control).filter((x) => x === f).length;
+  const roll = Engine.rand(100);
+  if (roll < 26) {                       // ELECTION / leadership turn in a council seat
+    const seats = ["hanging_market", "broken_crown", "god_quarter"];
+    const d = Engine.pick(seats);
+    const cur = Engine.controllerOf(g, d);
+    const cand = fkeys.filter((f) => f !== cur).sort((x, y) => pol.power[y] - pol.power[x]);
+    const top = cand.find((f) => owns(f) < 3) || cand[0];
+    const winner = (pol.power[top] > pol.power[cur] + 6 && owns(top) < 3 && Engine.chance(0.6)) ? top : cur;
+    if (winner !== cur) {
+      pol.control[d] = winner; pol.power[winner] = Engine.clamp(pol.power[winner] + 6, 5, 100);
+      Engine._logPolitics(g, `Power turns in ${AXIOM.DISTRICTS[d].name}`, `${Engine.factionFullName(winner)} unseats ${Engine.factionFullName(cur)}.`);
+    } else {
+      Engine._logPolitics(g, `${Engine.factionFullName(cur)} holds ${AXIOM.DISTRICTS[d].name}`, "The vote is survived; the terms tighten.");
+    }
+  } else if (roll < 44) {                // COUP — strength takes a district by force
+    const aggressor = Engine.pick(["ironwall", "street", "corporate"]);
+    const targets = Object.keys(pol.control).filter((d) => pol.control[d] !== aggressor);
+    const d = Engine.pick(targets);
+    const def = Engine.controllerOf(g, d);
+    if (owns(aggressor) < 3 && Engine.relation(g, aggressor, def) < -35 && pol.power[aggressor] > pol.power[def] && Engine.chance(0.5)) {
+      pol.control[d] = aggressor; Engine.setRelation(g, aggressor, def, Engine.relation(g, aggressor, def) - 15);
+      Engine._logPolitics(g, `${Engine.factionFullName(aggressor)} seizes ${AXIOM.DISTRICTS[d].name}`, `${Engine.factionFullName(def)} is driven out by force.`);
+    }
+  } else if (roll < 60) {                // PACT — two rising powers ally
+    const a = Engine.pick(fkeys), b = Engine.pick(fkeys.filter((f) => f !== a));
+    if (Engine.relation(g, a, b) > 10 && !P.factions[a].rivals.includes(b)) {
+      Engine.setRelation(g, a, b, Math.min(100, Engine.relation(g, a, b) + 30));
+      pol.power[a] = Engine.clamp(pol.power[a] + 3, 5, 100); pol.power[b] = Engine.clamp(pol.power[b] + 3, 5, 100);
+      Engine._logPolitics(g, `A pact is struck`, `${Engine.factionFullName(a)} and ${Engine.factionFullName(b)} make common cause.`);
+    }
+  } else if (roll < 78) {                // EDICT — the controller of your district passes a law
+    const d = g.here, ctrl = Engine.controllerOf(g, d);
+    const edicts = ["levies a new tax on trade", "imposes a night curfew", "declares a festival", "tightens the checkpoints", "opens the granaries"];
+    const e = Engine.pick(edicts);
+    g.flags.lastEdict = { district: d, faction: ctrl, text: e, day: g.day };
+    Engine._logPolitics(g, `${Engine.factionFullName(ctrl)} ${e}`, `By order, across ${AXIOM.DISTRICTS[d] ? AXIOM.DISTRICTS[d].name : d}.`);
+  } else {                               // WAR — rivals at the breaking point
+    let worst = null, wv = 0;
+    for (const k in pol.relations) if (pol.relations[k] < wv) { wv = pol.relations[k]; worst = k; }
+    if (worst && wv < -70) {
+      const [a, b] = worst.split("|");
+      if (!g.cascades.some((c) => c.id === "war")) g.cascades.push({ id: "war", label: "Border war", day: g.day, ttl: 10 });
+      Engine._logPolitics(g, `War breaks out`, `${Engine.factionFullName(a)} and ${Engine.factionFullName(b)} come to open blows; routes tighten.`);
+    }
+  }
 };
 
 Engine.die = function (g, msg) {

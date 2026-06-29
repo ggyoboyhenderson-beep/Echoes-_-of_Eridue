@@ -22,6 +22,34 @@ AXIOM.FACTIONS = {
   none:         "Unaffiliated",
 };
 
+/* ---- POLITICS — a balance of power that spans every era of the city -------
+ * Eight powers, each rooted in a different age, contend for control of the
+ * districts. They carry ideologies, ambitions, rivals, and allies; the
+ * simulation shifts power, flips control, forges and breaks pacts over time. */
+AXIOM.POLITICS = {
+  factions: {
+    temple:       { era: "Bronze Age",   creed: "rule by divine mandate",      ambition: 0.5, rivals: ["corporate", "street"],          allies: ["guild"] },
+    guild:        { era: "Classical",    creed: "rule by contract and coin",   ambition: 0.7, rivals: ["ironwall", "broken_crown"],     allies: ["temple", "corporate"] },
+    ironwall:     { era: "Medieval",     creed: "rule by strength and blood",  ambition: 0.8, rivals: ["guild", "broken_crown"],        allies: ["substrata"] },
+    broken_crown: { era: "Modern",       creed: "rule by mutual aid",          ambition: 0.4, rivals: ["corporate", "ironwall"],        allies: ["street"] },
+    street:       { era: "Cyberpunk",    creed: "rule by leverage and favors", ambition: 0.6, rivals: ["corporate", "temple"],          allies: ["broken_crown", "substrata"] },
+    corporate:    { era: "Late-Capital", creed: "rule by shareholder value",   ambition: 0.95, rivals: ["temple", "broken_crown", "street"], allies: ["guild"] },
+    substrata:    { era: "Six-Millennia",creed: "rule by secrecy and survival",ambition: 0.3, rivals: [],                              allies: ["street", "ironwall"] },
+    steppe:       { era: "Nomadic",      creed: "rule by oath and memory",     ambition: 0.45, rivals: ["corporate"],                   allies: [] },
+  },
+  // who governs each district, and under what kind of regime
+  regimes: {
+    ziggurat_crown: { faction: "temple",       gov: "Theocracy" },
+    hanging_market: { faction: "guild",        gov: "Merchant oligarchy" },
+    god_quarter:    { faction: "temple",       gov: "Sacred condominium" },
+    ironwall:       { faction: "ironwall",     gov: "Warlord fiefdom" },
+    broken_crown:   { faction: "broken_crown", gov: "Anarchist councils" },
+    neon_labyrinth: { faction: "street",       gov: "Syndicate turf" },
+    spire:          { faction: "corporate",    gov: "Corporatocracy" },
+    sub_strata:     { faction: "substrata",    gov: "Hidden networks" },
+  },
+};
+
 /* Default faction for ambient residents of a district. */
 People.districtFaction = {
   ziggurat_crown: "temple", hanging_market: "guild", god_quarter: "temple",

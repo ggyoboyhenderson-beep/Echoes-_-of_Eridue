@@ -278,6 +278,31 @@ button.mini { padding: 3px 9px; font-size: 12px; }
 
 /* ---- Cinematic grade overlay (vignette + film grain) -------------------- */
 #grade { position: fixed; inset: 0; z-index: 4; pointer-events: none; mix-blend-mode: normal; }
+
+/* ---- cutscene letterbox + captions ---- */
+#cine { position: fixed; inset: 0; z-index: 30; pointer-events: none; opacity: 0; transition: opacity 0.5s; }
+#cine.on { opacity: 1; }
+#cine .cine-bar { position: absolute; left: 0; right: 0; height: 0; background: #000; transition: height 0.6s ease; }
+#cine .cine-bar.top { top: 0; } #cine .cine-bar.bot { bottom: 0; }
+#cine.on .cine-bar { height: 12vh; }
+#cine-title { position: absolute; left: 0; right: 0; top: 34%; text-align: center;
+  font-family: Georgia, serif; font-size: 44px; letter-spacing: 6px; color: #f0e6d2;
+  text-shadow: 0 2px 24px rgba(0,0,0,0.9); opacity: 0; transition: opacity 0.8s; }
+#cine-title.show { opacity: 1; }
+#cine-cap { position: absolute; left: 8%; right: 8%; bottom: 15vh; text-align: center;
+  font-family: Georgia, serif; font-style: italic; font-size: 22px; line-height: 1.5;
+  color: #e8dcc2; text-shadow: 0 2px 16px rgba(0,0,0,0.95); opacity: 0; transition: opacity 0.6s; }
+#cine-cap.show { opacity: 1; }
+#cine-skip { position: absolute; right: 18px; bottom: calc(12vh + 12px); font-size: 12px;
+  color: rgba(230,220,200,0.5); letter-spacing: 1px; }
+#hud3d.cine-hide { opacity: 0; transition: opacity 0.4s; }
+
+/* ---- politics panel ---- */
+.phead { margin: 12px 0 4px; font-family: Georgia, serif; font-size: 13px; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--sand, #c8a050); border-bottom: 1px solid var(--line, #3a342a); padding-bottom: 3px; }
+.prow.pol { align-items: flex-start; }
+.powerbar { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; margin: 4px 0 3px; overflow: hidden; }
+.powerbar > i { display: block; height: 100%; background: linear-gradient(90deg, #8a6e4a, #e0b85a); }
 #grade::before { /* vignette + subtle warm/cool tint */
   content: ""; position: absolute; inset: 0;
   background:

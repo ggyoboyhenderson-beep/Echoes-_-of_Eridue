@@ -136,6 +136,7 @@ World.init = function () {
   addEventListener("keydown", (e) => {
     keys[e.code] = true;
     if (e.code.startsWith("Arrow")) e.preventDefault(); // arrow keys = look, don't scroll
+    if (cine) { if (e.code === "Escape" || e.code === "KeyE" || e.code === "Space") endCutscene(); return; }
     if (e.code === "KeyE") { if (dialogOpen()) closeDialog(); else World.interact(); }
     if (e.code === "Tab") { e.preventDefault(); if (!dialogOpen()) World.togglePanels(); }
     if (e.code === "KeyP") { ppOn = !ppOn; toast(`Cinematic rendering ${ppOn ? "on" : "off"}.`, ""); }
@@ -153,6 +154,7 @@ World.init = function () {
   let downX = 0, downY = 0, moved = 0;            // tap-vs-drag discrimination
   canvas.addEventListener("pointerdown", (e) => {
     if (window.GameAudio) GameAudio.ensure();
+    if (cine) { endCutscene(); return; }
     if (!lookActive()) return;
     dragging = true; dragX = downX = e.clientX; dragY = downY = e.clientY; moved = 0;
     try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
@@ -230,7 +232,7 @@ World._ppOn = () => ppOn && !!composer;
 /* ======================================================================== */
 World.start = function () {
   started = true;
-  World.buildDistrict(State.data.here, true);
+  World.buildDistrict(State.data.here, true, true);
   World.updateHUD();
 };
 
@@ -792,7 +794,7 @@ function makeLabel(text, color = "#e6b450") {
 }
 
 /* ======================================================================== */
-World.buildDistrict = function (id, spawnCenter) {
+World.buildDistrict = function (id, spawnCenter, cinematic) {
   // clear
   while (scene.children.length) scene.remove(scene.children[0]);
   interactables = []; labelSprites = []; focus = null;
@@ -918,6 +920,12 @@ World.buildDistrict = function (id, spawnCenter) {
 
   if (window.GameAudio) GameAudio.setDistrict(id, Engine.isNight(g));
   World.updateHUD();
+
+  // the first time you arrive somewhere, a sweeping establishing cutscene
+  if (cinematic && started) {
+    if (!g.visited) g.visited = {};
+    if (!g.visited[id]) { g.visited[id] = 1; establishingShot(id); }
+  }
 };
 
 function station(type, label, color, run) { return { type, label, color, run }; }
@@ -2657,18 +2665,89 @@ const THEMES = {
 
 /* ======================================================================== */
 /* main loop                                                                */
+/* ======================================================================== */
+/* CUTSCENES — letterboxed cinematic camera moves with captions for the big   */
+/* moments. The world keeps living underneath; click or Esc to skip.          */
+let cine = null;
+function setCap(id, text) {
+  const el = document.getElementById(id);
+  if (!text) { el.classList.remove("show"); return; }
+  el.innerHTML = text; el.classList.add("show");
+}
+World.playCutscene = function (spec) {
+  if (!spec || !spec.shots || !spec.shots.length) { if (spec && spec.onEnd) spec.onEnd(); return; }
+  cine = { shots: spec.shots, i: 0, t: 0, onEnd: spec.onEnd || null, capShown: -1 };
+  document.getElementById("cine").classList.add("on");
+  document.getElementById("hud3d").classList.add("cine-hide");
+  if (document.getElementById("prompt")) document.getElementById("prompt").textContent = "";
+  if (spec.title) { setCap("cine-title", spec.title); setTimeout(() => setCap("cine-title", ""), 3200); }
+  setCap("cine-cap", spec.shots[0].caption || "");
+};
+function endCutscene() {
+  if (!cine) return;
+  const cb = cine.onEnd; cine = null;
+  document.getElementById("cine").classList.remove("on");
+  document.getElementById("hud3d").classList.remove("cine-hide");
+  setCap("cine-title", ""); setCap("cine-cap", "");
+  if (cb) cb();
+}
+World.skipCutscene = endCutscene;
+function updateCine(dt) {
+  const sh = cine.shots[cine.i];
+  cine.t += dt;
+  const u = Math.min(1, cine.t / sh.dur);
+  const e = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;  // ease in-out
+  const from = sh.from, to = sh.to || sh.from, lk = sh.look || [0, 4, 0];
+  camera.position.set(from[0] + (to[0] - from[0]) * e, from[1] + (to[1] - from[1]) * e, from[2] + (to[2] - from[2]) * e);
+  camera.lookAt(lk[0], lk[1], lk[2]);
+  if (cine.capShown !== cine.i) { cine.capShown = cine.i; setCap("cine-cap", sh.caption || ""); }
+  if (cine.t >= sh.dur) {
+    cine.i++; cine.t = 0;
+    if (cine.i >= cine.shots.length) endCutscene();
+  }
+}
+// a sweeping establishing shot the first time you set foot in a district
+function establishingShot(id) {
+  const D = AXIOM.DISTRICTS[id]; if (!D) return;
+  const sub = (D.control ? D.control : "");
+  World.playCutscene({
+    title: D.name,
+    shots: [
+      { from: [-34, 26, 34], to: [34, 20, 30], look: [0, 7, 0], dur: 3.4, caption: D.tagline ? `<b>${D.tagline}</b>` : "" },
+      { from: [26, 7, 22], to: [6, 4, 20], look: [0, 5, 0], dur: 3.2, caption: sub ? `Held by ${sub}.` : "" },
+      { from: [-14, 3.2, 16], to: [-4, 2.4, 11], look: [0, 2, 6], dur: 2.8, caption: D.smell ? `<span style="opacity:.8">${D.smell}</span>` : "" },
+    ],
+    onEnd: () => { if (window.GameAudio) GameAudio.ensure(); },
+  });
+}
+World._establishing = establishingShot;
+// a slow orbit of the city behind a headline — used for political upheavals
+World.newsCutscene = function (headline, lines, onEnd) {
+  const ls = lines && lines.length ? lines : [""];
+  const r = 26, y = 17;
+  const shots = ls.map((ln, i) => {
+    const a0 = -0.7 + i * 0.55, a1 = a0 + 0.55;
+    return { from: [Math.sin(a0) * r, y, Math.cos(a0) * r], to: [Math.sin(a1) * r, y - 2, Math.cos(a1) * r], look: [0, 5, 0], dur: 3.2, caption: ln };
+  });
+  World.playCutscene({ title: headline, shots, onEnd });
+};
+
 function loop() {
   const dt = Math.min(clock.getDelta(), 0.05);
-  if (started && !panelsOpen() && !dialogOpen()) { updateLook(dt); updateMovement(dt); }
-  if (started) updateAgents(dt);
+  const cineOn = !!cine;
+  if (started && !cineOn && !panelsOpen() && !dialogOpen()) { updateLook(dt); updateMovement(dt); }
+  if (started) updateAgents(dt);                              // the world stays alive during cutscenes
   if (started && !inInterior) { updateVehicles(dt); updateGroundTraffic(dt); }
 
-  // camera orientation
-  camera.position.copy(player.pos);
-  const dir = new THREE.Vector3(
-    Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)
-  );
-  camera.lookAt(player.pos.clone().add(dir));
+  if (cineOn) { updateCine(dt); }                             // cutscene drives the camera
+  else {
+    // camera orientation
+    camera.position.copy(player.pos);
+    const dir = new THREE.Vector3(
+      Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)
+    );
+    camera.lookAt(player.pos.clone().add(dir));
+  }
 
   // billboards already face camera (sprites). Update focus.
   if (started) updateFocus();
@@ -2741,7 +2820,7 @@ World.interact = function () {
   State.save();
   // travel rebuilds the world
   if (focus && focus.type === "gate" && g.here === focus.dest) {
-    World.buildDistrict(g.here, true);
+    World.buildDistrict(g.here, true, true);
   }
   World.updateHUD();
   if (typeof Story !== "undefined" && Story.check) Story.check(g);
@@ -2761,6 +2840,11 @@ function toast(msg, kind) {
 /* HUD                                                                      */
 World.updateHUD = function () {
   const g = State.data; if (!g) return;
+  // a political upheaval just happened — show the news (unless a cutscene is already up)
+  if (g.politics && g.politics.pendingNews && !cine && started && !inInterior && !inRegion) {
+    const n = g.politics.pendingNews; g.politics.pendingNews = null;
+    World.newsCutscene(n.headline, n.lines);
+  }
   const d = AXIOM.DISTRICTS[g.here];
   document.getElementById("hud-name").textContent = g.name;
   document.getElementById("hud-role").textContent = `${g.role} · ${AXIOM.STATUS[g.status].label}`;
@@ -2902,6 +2986,42 @@ World.showPanel = function (tab) {
     if (!slog.length) body.appendChild(el("p", "muted", "Your story is still unwritten. Play, and the world will respond."));
     for (const s of slog.slice().reverse())
       body.appendChild(el("div", "prow lore", `<span style="font-size:12px"><b style="color:var(--cedar)">D${s.day} · ${s.title}</b><br><span class="muted">${s.choice}</span><br><span style="color:var(--sand-dim)">${s.line}</span></span>`));
+  }
+
+  if (tab === "politics") {
+    const pol = Engine.initPolitics(g), P = AXIOM.POLITICS;
+    body.appendChild(el("p", "muted small", `The balance of power — <b>${pol.climate}</b>. Eight powers, each rooted in a different age, contend for the districts. What you do for them shifts it.`));
+    // who controls each district, under what regime
+    body.appendChild(el("div", "phead", "Who rules where"));
+    for (const d of Object.keys(P.regimes)) {
+      const ctrl = Engine.controllerOf(g, d), reg = P.regimes[d];
+      const yours = Engine.factionRep(g, ctrl);
+      const yc = yours > 15 ? "var(--good)" : yours < -15 ? "var(--bad)" : "var(--sand-dim)";
+      const here = d === g.here ? ' style="color:var(--sand)"' : "";
+      body.appendChild(el("div", "prow",
+        `<span class="pn"${here}>${AXIOM.DISTRICTS[d].name} <span class="muted">· ${reg.gov}</span></span>` +
+        `<span class="pv" style="font-size:12px">${Engine.factionFullName(ctrl)} <span style="color:${yc}">(${yours >= 0 ? "+" : ""}${yours})</span></span>`));
+    }
+    // faction power bars
+    body.appendChild(el("div", "phead", "The powers"));
+    const fk = Object.keys(P.factions).sort((a, b) => pol.power[b] - pol.power[a]);
+    for (const f of fk) {
+      const pw = Math.round(pol.power[f]), fc = P.factions[f];
+      const ally = fc.allies.map((a) => AXIOM.FACTIONS[a] || a).join(", ");
+      const rival = fc.rivals.map((a) => AXIOM.FACTIONS[a] || a).join(", ");
+      const row = el("div", "prow pol");
+      row.innerHTML =
+        `<span style="flex:1"><b>${Engine.factionFullName(f)}</b> <span class="muted">· ${fc.era} · “${fc.creed}”</span>` +
+        `<div class="powerbar"><i style="width:${pw}%"></i></div>` +
+        `<span class="muted small">${ally ? "allied: " + ally + ". " : ""}${rival ? "rivals: " + rival + "." : ""}</span></span>` +
+        `<span class="pv">${pw}</span>`;
+      body.appendChild(row);
+    }
+    // recent upheavals
+    body.appendChild(el("div", "phead", "Recent upheavals"));
+    if (!pol.events.length) body.appendChild(el("p", "muted", "The city is quiet — for now."));
+    for (const e of pol.events.slice(0, 7))
+      body.appendChild(el("div", "prow lore", `<span style="font-size:12px"><b style="color:var(--cedar)">D${e.day} · ${e.headline}</b>${e.detail ? `<br><span class="muted">${e.detail}</span>` : ""}</span>`));
   }
 
   if (tab === "log") {

@@ -57,6 +57,8 @@ State.newGame = function (protoId) {
     heat: 0,          // notoriety / wanted level (0..100), decays over time
     bounty: 0,        // coin a hunter would collect for you
     story: { seen: [], stage: 0 },  // reactive-story progress
+    visited: {},      // districts you've set foot in (for establishing cutscenes)
+    politics: null,   // balance of power across the eras (seeded below)
 
     // Living-world simulation
     weather: "clear",
@@ -76,6 +78,8 @@ State.newGame = function (protoId) {
 
   // Seed the NPC world (people who exist independent of the player).
   Engine.seedNPCs(g);
+  // Seed the balance of power across the city's eras.
+  if (Engine.initPolitics) Engine.initPolitics(g);
 
   State.data = g;
   Engine.push(g, `You wake in ${AXIOM.DISTRICTS[g.here].name}. ${p.crisis}`, "crisis");
