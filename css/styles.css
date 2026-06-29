@@ -253,6 +253,7 @@ button.mini { padding: 3px 9px; font-size: 12px; }
 #dlg-standing { margin-top: 6px; font-size: 12px; }
 #dlg-standing .tier { padding: 1px 8px; border-radius: 10px; border: 1px solid currentColor; }
 #dlg-line { font-size: 16px; font-style: italic; color: var(--text); min-height: 64px; line-height: 1.55; }
+#dlg-line .beat { color: var(--sand, #c8a050); opacity: 0.85; font-weight: 600; }
 .dlg-choices { display: flex; gap: 8px; margin: 8px 0 12px; }
 .dlg-c { flex: 1; padding: 12px; font-size: 15px; }
 .dlg-c.friendly { border-color: #3a6a3a; } .dlg-c.friendly:hover { background: #2a3a26; }

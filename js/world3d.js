@@ -970,6 +970,10 @@ function makeHuman(ap) {
   // eyebrows
   const ebL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.02), browM); ebL.position.set(-0.06, 0.06, 0.15); head.add(ebL);
   const ebR = ebL.clone(); ebR.position.x = 0.06; head.add(ebR);
+  // mouth — two short halves we tilt into a smile or a frown
+  const mthMat = new THREE.MeshStandardMaterial({ color: shadeHex(ap.skin, 0.45), roughness: 0.6 });
+  const mouthL = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.014, 0.02), mthMat); mouthL.position.set(-0.021, -0.078, 0.146); head.add(mouthL);
+  const mouthR = mouthL.clone(); mouthR.position.x = 0.021; head.add(mouthR);
 
   // facial hair
   if (ap.facial === "beard" || ap.facial === "goatee") {
@@ -1024,6 +1028,7 @@ function makeHuman(ap) {
       llegPivot: L.piv, rlegPivot: R.piv, lknee: L.knee, rknee: R.knee,
       larmPivot: AL.piv, rarmPivot: AR.piv, lelbow: AL.elbow, relbow: AR.elbow,
       head, torso: grp,
+      browL: ebL, browR: ebR, mouthL, mouthR, eyeL: eyeWhiteL, eyeR: eyeWhiteR,
     },
   };
 }
@@ -1749,6 +1754,7 @@ World._tp = (x, z, y) => { player.pos.set(x, 1.7, z); if (y !== undefined) yaw =
 World._pokeSocial = () => { for (const a of agents) if (!a.partner) a.socialCD = 0; };
 World._freecam = (x, y, z, yw, pt) => { freeCam = true; player.pos.set(x, y, z); yaw = yw; pitch = pt; };
 World._agentStates = () => agents.map((a) => a.state);
+World._moods = () => agents.map((a) => a.moodKey || a.baseMoodKey);
 World._vehicles = () => vehicles.map((v) => [v.grp.position.x.toFixed(1), v.grp.position.z.toFixed(1), v.kind || (v.drone ? "drone" : "?")]);
 World._cityCars = () => cityTrafficData.length;
 World._enterables = () => interactables.filter((i) => i.type === "enter").map((i) => i.label);
@@ -1806,6 +1812,118 @@ function maybeSocialise(ag) {
       return;
     }
   }
+}
+
+/* ======================================================================== */
+/* EMOTION — every NPC carries a mood that shows on the face and the body,    */
+/* shaped by personality, place, time, and how they feel about YOU.           */
+const MOODS = {
+  happy:     { brow: -0.16, raise: 0.012, smile: 0.9,  open: 0.0,  tilt: 0.05,  lean: -0.02, emote: "♪", c: "#ffd27a" },
+  content:   { brow: -0.05, raise: 0.004, smile: 0.45, open: 0.0,  tilt: 0.02,  lean: 0.0,   emote: "",       c: "#cdbf9a" },
+  proud:     { brow: -0.02, raise: 0.0,   smile: 0.2,  open: 0.0,  tilt: -0.07, lean: -0.05, emote: "",       c: "#e0b85a" },
+  weary:     { brow: 0.08,  raise: -0.006,smile: -0.3, open: 0.2,  tilt: 0.16,  lean: 0.06,  emote: "z", c: "#9aa6b0" },
+  sad:       { brow: -0.22, raise: 0.006, smile: -0.55,open: 0.0,  tilt: 0.2,   lean: 0.07,  emote: "",       c: "#7a90c0" },
+  anxious:   { brow: 0.2,   raise: 0.01,  smile: -0.25,open: 0.25, tilt: 0.0,   lean: 0.02,  fidget: 1, emote: "?", c: "#e0c060" },
+  suspicious:{ brow: 0.14,  raise: -0.006,smile: -0.2, open: 0.0,  tilt: -0.03, lean: 0.0,   emote: "?",      c: "#b0a060" },
+  angry:     { brow: 0.3,   raise: -0.012,smile: -0.55,open: 0.15, tilt: -0.05, lean: -0.05, emote: "!",      c: "#e0685a" },
+  afraid:    { brow: 0.18,  raise: 0.014, smile: -0.2, open: 0.5,  tilt: 0.0,   lean: 0.1,   fidget: 1, emote: "!", c: "#d05a8a" },
+};
+const DANGER = { ziggurat_crown: 1, hanging_market: 2, god_quarter: 0, ironwall: 4,
+  broken_crown: 3, neon_labyrinth: 3, spire: 1, sub_strata: 4 };
+const MOOD_WORD = { happy: "in good spirits", content: "at ease", proud: "coolly proud",
+  weary: "worn down", sad: "downcast", anxious: "on edge", suspicious: "wary of you",
+  angry: "simmering", afraid: "frightened" };
+const MOOD_BEAT = { happy: "*brightens as you approach*", proud: "*lifts their chin*",
+  weary: "*lets out a tired breath*", sad: "*won't quite meet your eye*",
+  anxious: "*glances around, restless*", suspicious: "*narrows their eyes at you*",
+  angry: "*bristles at the sight of you*", afraid: "*tenses, ready to bolt*" };
+
+function baseMoodKey(meta, danger, night) {
+  const k = meta.kind;
+  if (k === "drunk") return "weary"; if (k === "addict") return "anxious";
+  if (k === "beggar") return (meta.personality && meta.personality.warmth > 0) ? "sad" : "weary";
+  if (k === "preacher") return "angry"; if (k === "busker" || k === "hawker" || k === "merchant") return "happy";
+  if (k === "cutpurse" || k === "smuggler") return "suspicious";
+  const t = meta.personality; if (!t) return "content";
+  if (t.pride > 0.5) return "proud";
+  if (t.warmth > 0.4) return t.curiosity > 0.2 ? "happy" : "content";
+  if (t.nerve < -0.4) return danger >= 3 ? "afraid" : "anxious";
+  if (t.warmth < -0.4) return "suspicious";
+  if (danger >= 3 && night) return "weary";
+  if (t.warmth < 0 && t.pride < 0) return "weary";
+  return "content";
+}
+function reactMoodKey(ag, g) {
+  const rec = g.npc && g.npc[ag.meta.id];
+  const disp = rec ? rec.disp : 0;
+  const heat = g.heat || 0;
+  const t = ag.meta.personality;
+  const lawful = ag.meta.faction === "corporate" || ag.meta.faction === "temple" || ag.meta.kind === "guard" || ag.meta.kind === "soldier";
+  if (heat > 40 && lawful) return "angry";
+  if (heat > 35 && t && t.nerve < 0) return "afraid";
+  if (disp > 25) return "happy";
+  if (disp < -25) return "angry";
+  if (disp < -10) return "suspicious";
+  if (disp > 8) return "content";
+  return ag.baseMoodKey || "content";
+}
+
+const EMOTE_TEX = {};
+function emoteTex(sym) {
+  if (EMOTE_TEX[sym]) return EMOTE_TEX[sym];
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const x = c.getContext("2d");
+  x.font = "bold 46px sans-serif"; x.textAlign = "center"; x.textBaseline = "middle";
+  x.lineWidth = 5; x.strokeStyle = "rgba(0,0,0,0.6)"; x.strokeText(sym, 32, 36);
+  x.fillStyle = "#fff"; x.fillText(sym, 32, 36);
+  const t = new THREE.CanvasTexture(c); EMOTE_TEX[sym] = t; return t;
+}
+function showEmote(ag, sym) {
+  if (!sym) return;
+  if (!ag.emoteSpr) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: emoteTex(sym), transparent: true, depthTest: false, depthWrite: false }));
+    s.scale.set(0.5, 0.5, 0.5); s.position.set(0, 2.5 / ag.grp.scale.x, 0); ag.grp.add(s); ag.emoteSpr = s;
+  } else { ag.emoteSpr.material.map = emoteTex(sym); }
+  ag.emoteSpr.visible = true; ag.emoteT = 1.7;
+}
+
+// Drive the face + posture toward the current mood; lerped so it never snaps.
+function applyMood(ag, P, dt) {
+  // pick the mood: reacting to the player overrides the resting mood
+  if (ag.baseMoodKey === undefined)
+    ag.baseMoodKey = baseMoodKey(ag.meta, DANGER[currentDistrictId] || 1, !!(typeof Engine !== "undefined" && Engine.isNight && Engine.isNight(State.data)));
+  const key = ag.state === "react" ? reactMoodKey(ag, State.data) : ag.baseMoodKey;
+  if (key !== ag.moodKey) {
+    ag.moodKey = key;
+    if (ag.state === "react") showEmote(ag, MOODS[key].emote);   // a pop when their feeling about you shows
+  }
+  const m = MOODS[key] || MOODS.content;
+  const f = ag.face || (ag.face = { brow: 0, raise: 0, smile: 0.3, open: 0, tilt: 0, lean: 0 });
+  const k = Math.min(1, dt * 4);
+  f.brow += (m.brow - f.brow) * k; f.raise += (m.raise - f.raise) * k;
+  f.smile += (m.smile - f.smile) * k; f.open += (m.open - f.open) * k;
+  f.tilt += (m.tilt - f.tilt) * k; f.lean += (m.lean - f.lean) * k;
+  if (P.browL) { P.browL.rotation.z = -f.brow; P.browR.rotation.z = f.brow; P.browL.position.y = 0.06 + f.raise; P.browR.position.y = 0.06 + f.raise; }
+  if (P.mouthL) {
+    P.mouthL.rotation.z = -f.smile * 0.5; P.mouthR.rotation.z = f.smile * 0.5;
+    const my = -0.078 - f.open * 0.02; P.mouthL.position.y = my; P.mouthR.position.y = my;
+    P.mouthL.position.x = -0.021 - f.open * 0.004; P.mouthR.position.x = 0.021 + f.open * 0.004;
+  }
+  if (P.head) P.head.rotation.z = f.tilt;
+  if (!ag.pose) ag.grp.rotation.x = f.lean;          // posers control their own body
+  // blink
+  ag.blinkT = (ag.blinkT == null ? Math.random() * 4 : ag.blinkT) - dt;
+  if (P.eyeL) {
+    const blinking = ag.blinkT < 0 && ag.blinkT > -0.12;
+    P.eyeL.scale.y = 0.035 * (blinking ? 0.18 : 1); P.eyeR.scale.y = P.eyeL.scale.y;
+    if (ag.blinkT < -0.12) ag.blinkT = 2.5 + Math.random() * 4;
+  }
+  // fidget for the jittery moods
+  if (m.fidget) { const j = Math.sin((ag.idle || 0) * 9) * 0.05; P.rarmPivot.rotation.x += j; if (P.head) P.head.rotation.y += Math.sin((ag.idle || 0) * 3) * 0.05; }
+  // idle emote pops on a slow cadence
+  ag.emoteCD = (ag.emoteCD == null ? 4 + Math.random() * 8 : ag.emoteCD) - dt;
+  if (ag.emoteCD < 0) { ag.emoteCD = 7 + Math.random() * 9; if (ag.state !== "react" && m.emote && Math.random() < 0.5) showEmote(ag, m.emote); }
+  if (ag.emoteSpr && ag.emoteT > 0) { ag.emoteT -= dt; if (ag.emoteT <= 0) ag.emoteSpr.visible = false; }
 }
 
 // Distinct, readable street poses driven each frame off ag.pose.
@@ -1959,6 +2077,9 @@ function updateAgents(dt) {
       P.head.rotation.y += (hy - P.head.rotation.y) * Math.min(1, dt * 6);
       P.head.rotation.x += (hx - P.head.rotation.x) * Math.min(1, dt * 6);
     }
+
+    // mood: facial expression, posture, blink, fidget, floating emote
+    applyMood(ag, P, dt);
   }
 }
 
@@ -2601,8 +2722,13 @@ function renderDialog(greeting) {
     `<span class="sigil">${Art.sigil(meta.faction)}</span>${meta.name}`;
   const pers = People.personality(meta);
   const origin = meta.originName && meta.originName !== "Ur-Axiom" ? ` · of ${meta.originName}` : "";
-  document.getElementById("dlg-role").textContent =
-    `${meta.role} · ${AXIOM.FACTIONS[meta.faction] || "Unaffiliated"}${origin} — ${pers}`;
+  // current mood (drives a stage-direction + a "feeling" tag)
+  const moodKey = (d.agent && (d.agent.moodKey || d.agent.baseMoodKey)) || "content";
+  const mood = MOOD_WORD[moodKey] || "at ease";
+  const mc = (MOODS[moodKey] && MOODS[moodKey].c) || "#cdbf9a";
+  document.getElementById("dlg-role").innerHTML =
+    `${meta.role} · ${AXIOM.FACTIONS[meta.faction] || "Unaffiliated"}${origin} — ${pers}` +
+    ` · <span style="color:${mc}">${mood}</span>`;
 
   // standing with this person + their faction
   const tierName = ["marked", "disliked", "known to", "trusted by", "honored by"];
@@ -2614,7 +2740,8 @@ function renderDialog(greeting) {
      <span class="muted" style="margin-left:8px">faction standing: ${fr}</span>`;
 
   const line = greeting ? People.pickGreet(meta, rec.disp) : (d.lastLine || "");
-  document.getElementById("dlg-line").textContent = line;
+  const beat = greeting && MOOD_BEAT[moodKey] ? `<span class="beat">${MOOD_BEAT[moodKey]}</span> ` : "";
+  document.getElementById("dlg-line").innerHTML = beat + line.replace(/[<>]/g, "");
 
   const tradeBtn = document.getElementById("dlg-trade");
   tradeBtn.disabled = !(AXIOM.MARKETS[g.here] || []).length;
