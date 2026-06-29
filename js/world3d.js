@@ -447,15 +447,23 @@ let cityTraffic = null, cityTrafficData = [];
 function buildSurroundCity(theme, night) {
   const modern = theme.tex === "neon" || theme.tex === "panel" || theme.tex === "marble";
   const N = 360;
-  const geo = new THREE.BoxGeometry(1, 1, 1);
-  const win = modern && Art ? Art.windowTex(theme.tex === "marble" ? 0xbfe2ff : 0x38d0c8, night, 4242) : null;
+  // lit windows on EVERY building now — warm for old eras, cool for modern
+  const winColor = modern ? (theme.tex === "marble" ? 0xbfe2ff : 0x38d0c8) : 0xffcf8a;
+  const win = Art ? Art.windowTex(winColor, night, 4242) : null;
   if (win) win.repeat.set(2, 4);
   const mat = new THREE.MeshStandardMaterial({
-    roughness: modern ? 0.45 : 0.95, metalness: modern ? 0.4 : 0.05,
-    emissiveMap: win, emissive: win ? 0xffffff : 0x000000, emissiveIntensity: win ? (night ? 0.85 : 0.22) : 0,
+    roughness: modern ? 0.45 : 0.9, metalness: modern ? 0.4 : 0.07,
+    emissiveMap: win, emissive: win ? 0xffffff : 0x000000, emissiveIntensity: win ? (night ? 0.8 : 0.18) : 0,
   });
-  const im = new THREE.InstancedMesh(geo, mat, N);
-  im.frustumCulled = false; im.castShadow = false; im.receiveShadow = false;
+  const bodies = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, N);
+  bodies.frustumCulled = false; bodies.castShadow = false; bodies.receiveShadow = false;
+
+  const roofMat = new THREE.MeshStandardMaterial({ color: shadeHex(theme.wall, 0.5), roughness: 0.85, metalness: 0.05 });
+  const roofGeo = new THREE.ConeGeometry(0.72, 1, 4);       // 4-sided pitched roof
+  const capMat = new THREE.MeshStandardMaterial({ color: shadeHex(theme.wall, 0.72), roughness: 0.8, metalness: modern ? 0.3 : 0.1 });
+  const capGeo = new THREE.BoxGeometry(1, 1, 1);
+  const roofs = [], caps = [];
+
   const c = new THREE.Color();
   for (let i = 0; i < N; i++) {
     const a = Math.random() * Math.PI * 2;
@@ -464,15 +472,55 @@ function buildSurroundCity(theme, night) {
     const r = BOUND + 6 + t * 96;
     const h = t < 0.33 ? 2 + Math.random() * 4 : t < 0.66 ? 6 + Math.random() * 12 : 14 + Math.random() * 40;
     const w = (t < 0.33 ? 2.5 : 4) + Math.random() * (t < 0.33 ? 2 : 6);
-    _dummy.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r);
-    _dummy.rotation.set(0, Math.random() * Math.PI, 0);
-    _dummy.scale.set(w, h, w * (0.8 + Math.random() * 0.5));
-    _dummy.updateMatrix(); im.setMatrixAt(i, _dummy.matrix);
+    const d = w * (0.8 + Math.random() * 0.5);
+    const x = Math.cos(a) * r, z = Math.sin(a) * r, rot = Math.random() * Math.PI;
+    _dummy.position.set(x, h / 2, z); _dummy.rotation.set(0, rot, 0); _dummy.scale.set(w, h, d);
+    _dummy.updateMatrix(); bodies.setMatrixAt(i, _dummy.matrix);
     c.setHex(theme.wall).multiplyScalar(0.6 + Math.random() * 0.7);
-    im.setColorAt(i, c);
+    bodies.setColorAt(i, c);
+
+    if (t < 0.33) {                                          // a house — pitched roof
+      const rw = Math.max(w, d) * 0.82, rh = 0.8 + Math.random() * 1.0;
+      _dummy.position.set(x, h + rh / 2, z); _dummy.rotation.set(0, rot + Math.PI / 4, 0); _dummy.scale.set(rw, rh, rw);
+      _dummy.updateMatrix(); roofs.push(_dummy.matrix.clone());
+    } else if (Math.random() < 0.7) {                        // office/tower — rooftop block
+      const cw = w * (0.4 + Math.random() * 0.2), ch = 0.6 + Math.random() * 1.0;
+      _dummy.position.set(x + (Math.random() - 0.5) * w * 0.3, h + ch / 2, z + (Math.random() - 0.5) * d * 0.3);
+      _dummy.rotation.set(0, rot, 0); _dummy.scale.set(cw, ch, cw);
+      _dummy.updateMatrix(); caps.push(_dummy.matrix.clone());
+    }
   }
-  im.instanceColor.needsUpdate = true;
-  scene.add(im);
+  bodies.instanceColor.needsUpdate = true; scene.add(bodies);
+  if (roofs.length) { const rm = new THREE.InstancedMesh(roofGeo, roofMat, roofs.length); rm.frustumCulled = false; roofs.forEach((m, i) => rm.setMatrixAt(i, m)); scene.add(rm); }
+  if (caps.length)  { const cm = new THREE.InstancedMesh(capGeo, capMat, caps.length); cm.frustumCulled = false; caps.forEach((m, i) => cm.setMatrixAt(i, m)); scene.add(cm); }
+}
+
+/* A detailed walk-up home/office: foundation, window-lit body, roof, door, and
+ * a night porch light — used for the buildings you can actually reach & enter. */
+const ERA_WALL = { ancient: 0x8a6e4a, market: 0x9a7a52, medieval: 0x6e6a60, cyber: 0x2a2c38, corporate: 0xcfd6de };
+function detailHouse(x, z, w, h, era, night, isOffice) {
+  const modern = era === "cyber" || era === "corporate";
+  const wallHex = ERA_WALL[era] || 0x8a6e4a;
+  const winColor = modern ? 0x9fd8ff : 0xffcf8a;
+  box(w * 1.08, 0.4, w * 1.08, shadeHex(wallHex, 0.7), x, 0.2, z, { rough: 0.95 });  // foundation
+  const body = box(w, h, w, wallHex, x, h / 2 + 0.2, z, { rough: modern ? 0.4 : 0.9, metal: modern ? 0.4 : 0.07 });
+  const win = Art && Art.windowTex(winColor, night, (x * 7 + z * 3) | 0);
+  if (win) {
+    win.repeat.set(Math.max(1, Math.round(w / 2)), Math.max(2, Math.round(h / 3)));
+    body.material.emissiveMap = win; body.material.emissive = new THREE.Color(0xffffff);
+    body.material.emissiveIntensity = night ? 0.7 : 0.18; body.material.needsUpdate = true;
+  }
+  if (modern || isOffice) {                                  // flat roof + rooftop unit
+    box(w * 1.05, 0.45, w * 1.05, shadeHex(wallHex, 0.8), x, h + 0.45, z, { rough: 0.7, metal: modern ? 0.3 : 0.1 });
+    box(w * 0.4, 0.7, w * 0.4, 0x2a2a30, x, h + 0.9, z, { tex: "panel", metal: 0.4 });
+  } else {                                                   // pitched roof
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.82, h * 0.5, 4),
+      new THREE.MeshStandardMaterial({ color: shadeHex(wallHex, 0.5), roughness: 0.85 }));
+    roof.rotation.y = Math.PI / 4; roof.position.set(x, h + 0.2 + h * 0.25, z);
+    roof.castShadow = roof.receiveShadow = true; scene.add(roof);
+  }
+  box(w * 0.34, 1.7, 0.12, 0x2a211a, x, 1.05, z + w / 2 + 0.02, { tex: null, rough: 0.7 });  // door
+  if (night) light(winColor, 3, x, 2.0, z + w / 2 + 0.4, 6);                                 // porch light
 }
 
 /* Hundreds of cars on a street grid, one InstancedMesh, per-instance colour. */
@@ -715,8 +763,9 @@ World.buildDistrict = function (id, spawnCenter) {
       const a = Math.PI / 4 + i * Math.PI / 2;
       const ex = Math.cos(a) * (BOUND - 3), ez = Math.sin(a) * (BOUND - 3);
       const bw = 3.5, bh = 5 + rnd() * 3;
-      box(bw, bh, bw, theme.wall, ex, bh / 2, ez, { rough: 0.9 });
-      registerBuilding(ex, ez, bw, i % 2 ? "Outer-City Home" : "Outer-City Office", i % 2 ? "home" : "office", era);
+      const office = i % 2 === 0;
+      detailHouse(ex, ez, bw, bh, era, Engine.isNight(g), office);
+      registerBuilding(ex, ez, bw, office ? "Outer-City Office" : "Outer-City Home", office ? "office" : "home", era);
     }
   }
 
@@ -1580,6 +1629,8 @@ World._dbgYaw = () => yaw;
 World._pos = () => [+player.pos.x.toFixed(2), +player.pos.z.toFixed(2)];
 World._keyDown = (c) => !!keys[c];
 World._tp = (x, z, y) => { player.pos.set(x, 1.7, z); if (y !== undefined) yaw = y; };
+World._pokeSocial = () => { for (const a of agents) if (!a.partner) a.socialCD = 0; };
+World._agentStates = () => agents.map((a) => a.state);
 World._vehicles = () => vehicles.map((v) => [v.grp.position.x.toFixed(1), v.grp.position.z.toFixed(1), v.kind || (v.drone ? "drone" : "?")]);
 World._cityCars = () => cityTrafficData.length;
 World._enterables = () => interactables.filter((i) => i.type === "enter").map((i) => i.label);
@@ -1614,9 +1665,35 @@ function pickWander(rnd) {
   return new THREE.Vector3(Math.cos(a) * rad, 0, Math.sin(a) * rad);
 }
 
+// Two NPCs strike up a conversation: they pair off, walk together, and chat.
+function breakPair(ag) {
+  const pr = ag.partner;
+  ag.partner = null; ag.talkT = 0; ag.socialCD = 4 + Math.random() * 5;
+  if (pr && pr.partner === ag) { pr.partner = null; pr.talkT = 0; pr.socialCD = 4 + Math.random() * 5; }
+}
+function maybeSocialise(ag) {
+  if (ag.partner) return;
+  if (ag.socialCD == null) { ag.socialCD = 2 + Math.random() * 5; return; }
+  if (ag.socialCD > 0) return;
+  ag.socialCD = 5 + Math.random() * 6;
+  const gp = ag.grp.position;
+  for (const o of agents) {
+    if (o === ag || o.partner || o.state === "react" || o.state === "frozen" || o.floor !== ag.floor) continue;
+    const od = Math.hypot(o.grp.position.x - gp.x, o.grp.position.z - gp.z);
+    const reach = (ag.stationary || o.stationary) ? 2.6 : 8;  // can't walk over if rooted
+    if (od > 1.0 && od < reach) {
+      if (Math.hypot(player.pos.x - o.grp.position.x, player.pos.z - o.grp.position.z) < REACT) continue;
+      const t = 4 + Math.random() * 6;
+      ag.partner = o; o.partner = ag; ag.talkT = o.talkT = t;
+      return;
+    }
+  }
+}
+
 function updateAgents(dt) {
   const dlgAgent = World._dialog && World._dialog.agent;
   for (const ag of agents) {
+    if (ag.socialCD != null && !ag.partner) ag.socialCD -= dt;  // tick conversation cooldown
     if (ag.state === "frozen") { // inspector pose: gentle idle only
       ag.idle = (ag.idle || 0) + dt; const br = Math.sin(ag.idle * 1.6) * 0.04;
       ag.parts.larmPivot.rotation.x = br; ag.parts.rarmPivot.rotation.x = -br;
@@ -1627,24 +1704,47 @@ function updateAgents(dt) {
     const distP = Math.hypot(dxp, dzp);
     const sameFloor = (ag.floor === undefined || ag.floor === currentFloor);
     let moving = false, targetFacing = ag.facing;
+    ag.gesture = 0;
 
-    if (sameFloor && (ag === dlgAgent || distP < REACT)) {
+    // the player always takes priority over chatting with a neighbour
+    const playerNear = sameFloor && (ag === dlgAgent || distP < REACT);
+    if (playerNear && ag.partner) breakPair(ag);
+
+    if (playerNear) {
       // react to your approach: stop and turn to face you
       ag.state = "react";
       targetFacing = Math.atan2(dxp, dzp);
       if (!ag.greeted) ag.greeted = true;
+    } else if (ag.partner) {
+      // socialising with another NPC: close the gap, then face them and talk
+      const pr = ag.partner, pgp = pr.grp.position;
+      const dx = pgp.x - gp.x, dz = pgp.z - gp.z, d = Math.hypot(dx, dz) || 1;
+      targetFacing = Math.atan2(dx, dz);
+      if (!agents.includes(pr)) { breakPair(ag); }
+      else if (d > 2.1 && !ag.stationary) {
+        const step = ag.speed * 0.8 * dt; gp.x += dx / d * step; gp.z += dz / d * step;
+        moving = true; ag.state = "approach";
+      } else {
+        ag.state = "talk"; ag.gesture = 1; ag.talkT -= dt; if (ag.talkT <= 0) breakPair(ag);
+      }
     } else if (ag.stationary) {
       ag.state = "idle"; targetFacing = ag.facing;
+      maybeSocialise(ag);
     } else {
       ag.state = "wander";
-      const dx = ag.target.x - gp.x, dz = ag.target.z - gp.z;
-      const d = Math.hypot(dx, dz);
-      if (d < 1.0) { ag.target = pickWander(); }
+      // brief pauses make wandering read as natural, not robotic
+      if (ag.pause > 0) { ag.pause -= dt; targetFacing = ag.facing; }
       else {
-        const step = ag.speed * dt;
-        gp.x += (dx / d) * step; gp.z += (dz / d) * step;
-        moving = true; targetFacing = Math.atan2(dx, dz);
+        const dx = ag.target.x - gp.x, dz = ag.target.z - gp.z;
+        const d = Math.hypot(dx, dz);
+        if (d < 1.0) { ag.target = pickWander(); ag.pause = Math.random() < 0.5 ? 0.6 + Math.random() * 2.2 : 0; }
+        else {
+          const step = ag.speed * dt;
+          gp.x += (dx / d) * step; gp.z += (dz / d) * step;
+          moving = true; targetFacing = Math.atan2(dx, dz);
+        }
       }
+      maybeSocialise(ag);
     }
 
     // smooth turn
@@ -1674,6 +1774,14 @@ function updateAgents(dt) {
     ag.grp.position.y = (ag.baseY || 0) + bob;
     if (!moving) { P.larmPivot.rotation.x = breathe; P.rarmPivot.rotation.x = -breathe; }
 
+    // conversational gesturing — a raised, moving hand while talking
+    if (ag.gesture) {
+      const gh = Math.sin(ag.idle * 3.4);
+      P.rarmPivot.rotation.x = -0.5 - Math.max(0, gh) * 0.7;
+      P.larmPivot.rotation.x = 0.06 + Math.sin(ag.idle * 2.2) * 0.06;
+      if (P.relbow) P.relbow.rotation.x = 0.45 + Math.max(0, gh) * 0.6;
+    }
+
     // head turns toward you when you're near (reacting to your approach)
     if (P.head) {
       let hy = 0, hx = 0;
@@ -1682,6 +1790,12 @@ function updateAgents(dt) {
         let n = local; while (n > Math.PI) n -= Math.PI * 2; while (n < -Math.PI) n += Math.PI * 2;
         hy = Math.max(-0.9, Math.min(0.9, n));
         hx = Math.max(-0.4, Math.min(0.4, (player.pos.y - ((ag.baseY || 0) + 1.86)) * -0.3));
+      } else if (ag.state === "talk" && ag.partner) {
+        const pgp = ag.partner.grp.position;
+        let n = Math.atan2(pgp.x - gp.x, pgp.z - gp.z) - ag.facing;
+        while (n > Math.PI) n -= Math.PI * 2; while (n < -Math.PI) n += Math.PI * 2;
+        hy = Math.max(-0.6, Math.min(0.6, n));
+        hx = Math.sin(ag.idle * 2.6) * 0.13;            // nodding along
       } else { hy = Math.sin(ag.idle * 0.7) * 0.25; }
       P.head.rotation.y += (hy - P.head.rotation.y) * Math.min(1, dt * 6);
       P.head.rotation.x += (hx - P.head.rotation.x) * Math.min(1, dt * 6);
