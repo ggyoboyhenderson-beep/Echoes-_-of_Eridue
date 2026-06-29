@@ -325,6 +325,46 @@ Art.windowTex = function (litColor, night, seed) {
   Art._winCache[key] = t; return t;
 };
 
+/* Car-paint texture for a hero vehicle: the base colour with panel seams, a
+ * top sheen, and faint grime so the bodywork isn't a flat block. */
+Art._carCache = {};
+Art.carPaint = function (baseHex) {
+  if (Art._carCache[baseHex]) return Art._carCache[baseHex];
+  const S = 128, c = document.createElement("canvas"); c.width = c.height = S;
+  const x = c.getContext("2d"); const rnd = _rng(baseHex * 7 + 13);
+  x.fillStyle = _css(baseHex); x.fillRect(0, 0, S, S);
+  // sheen: lighter toward the top (sky), darker toward the sills
+  const g = x.createLinearGradient(0, 0, 0, S);
+  g.addColorStop(0, "rgba(255,255,255,0.18)"); g.addColorStop(0.45, "rgba(255,255,255,0.02)");
+  g.addColorStop(0.65, "rgba(0,0,0,0.04)"); g.addColorStop(1, "rgba(0,0,0,0.22)");
+  x.fillStyle = g; x.fillRect(0, 0, S, S);
+  // panel seams
+  x.strokeStyle = "rgba(0,0,0,0.28)"; x.lineWidth = 2;
+  for (const px of [S * 0.32, S * 0.68]) { x.beginPath(); x.moveTo(px, 0); x.lineTo(px, S); x.stroke(); }
+  x.beginPath(); x.moveTo(0, S * 0.5); x.lineTo(S, S * 0.5); x.stroke();      // belt line
+  x.strokeStyle = "rgba(255,255,255,0.10)"; x.lineWidth = 1;                   // seam highlight
+  for (const px of [S * 0.32, S * 0.68]) { x.beginPath(); x.moveTo(px + 1.5, 0); x.lineTo(px + 1.5, S); x.stroke(); }
+  // grime along the lower edge
+  for (let i = 0; i < 80; i++) { x.fillStyle = `rgba(20,16,12,${0.04 + rnd() * 0.08})`; x.fillRect(rnd() * S, S * 0.7 + rnd() * S * 0.3, 2 + rnd() * 4, 1 + rnd() * 3); }
+  const t = new THREE.CanvasTexture(c); t.anisotropy = 4;
+  Art._carCache[baseHex] = t; return t;
+};
+/* Neutral panel texture (white base) for the instanced background traffic —
+ * tinted per-car by instanceColor, so even the distant cars read as cars. */
+Art._carPanels = null;
+Art.carPanels = function () {
+  if (Art._carPanels) return Art._carPanels;
+  const S = 64, c = document.createElement("canvas"); c.width = S * 2; c.height = S;
+  const x = c.getContext("2d");
+  x.fillStyle = "#ffffff"; x.fillRect(0, 0, S * 2, S);
+  x.fillStyle = "rgba(10,14,22,0.85)"; x.fillRect(S * 0.55, S * 0.12, S * 0.9, S * 0.4);  // glasshouse band
+  x.strokeStyle = "rgba(0,0,0,0.3)"; x.lineWidth = 2;
+  x.strokeRect(2, 2, S * 2 - 4, S - 4);                                        // body edge
+  x.beginPath(); x.moveTo(S, 0); x.lineTo(S, S); x.stroke();                   // door seam
+  const t = new THREE.CanvasTexture(c);
+  Art._carPanels = t; return t;
+};
+
 /* A tiling road texture: asphalt, edge lines, a dashed centre line, and a
  * direction chevron. `horizontal` lays the lane along X (else Z); `reverse`
  * flips the arrow so it points the way the traffic actually travels. */

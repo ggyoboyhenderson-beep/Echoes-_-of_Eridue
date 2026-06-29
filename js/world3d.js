@@ -320,7 +320,8 @@ function makeVehicle(kind, color, night) {
     if (m) { const g = new THREE.Group(); m.position.y = m.userData.yOffset || 0; g.add(m); return { grp: g, wheels: [] }; }
   }
   const grp = new THREE.Group();
-  const body  = new THREE.MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.65, envMapIntensity: 1.1 });
+  const paint = Art && Art.carPaint ? Art.carPaint(color) : null;   // panel seams + sheen + grime
+  const body  = new THREE.MeshStandardMaterial({ color: paint ? 0xffffff : color, map: paint, roughness: 0.32, metalness: 0.65, envMapIntensity: 1.1 });
   const trim  = new THREE.MeshStandardMaterial({ color: shadeHex(color, 0.6), roughness: 0.4, metalness: 0.6 });
   const dark  = new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.6, metalness: 0.4 });
   const chrome = new THREE.MeshStandardMaterial({ color: 0xb9c0cc, roughness: 0.22, metalness: 0.95 });
@@ -582,7 +583,8 @@ function buildGroundTraffic(id, night) {
   const count = n != null ? n : 90;
   if (!count) return;
   const geo = new THREE.BoxGeometry(1.5, 0.6, 3.0);
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.45 });
+  const panels = Art && Art.carPanels ? Art.carPanels() : null;     // seams + glasshouse, tinted per-car
+  const mat = new THREE.MeshStandardMaterial({ map: panels, roughness: 0.45, metalness: 0.45 });
   const im = new THREE.InstancedMesh(geo, mat, count);
   im.frustumCulled = false; im.castShadow = false;
   const cols = [0x8a2a2a, 0x2a4a8a, 0x2a8a5a, 0xc8a030, 0x222228, 0x8a3a6a, 0xb0b4bc, 0x30384a, 0xc86a2a];
