@@ -71,6 +71,26 @@ Drop `.glb` files to replace the procedural motorcycle/car/hovercar/drone.
   (Use `.glb`, not `.gltf+bin`. Draco-compressed models would also need a Draco
   decoder, which isn't wired up — pick uncompressed `.glb`.)
 
+### 3b. Realistic human characters (Quaternius "SOURCE" pack)
+
+The default people are built procedurally so they can **walk, gesture, change
+mood, and act out their routines** — that animation is driven by a hand-built
+skeleton, so it only works on the procedural body.
+
+You can swap in the free **Quaternius CC0 human base models** (the realistic
+rigged figures, ~13k tris, 20 hairstyles) for a sculpted look:
+
+- Get them at **https://quaternius.com** (the "Universal Animated/SOURCE" human
+  pack — CC0, free for any use). Export a single figure to **`.glb`**.
+- Put it at **`assets/models/character.glb`** and host the game over **HTTP(S)**
+  (browsers block `file://` model loads).
+- **Caveat — animation:** a loaded `.glb` is a single skinned mesh, so the
+  procedural gait/gesture/mood rig can't drive it; with the current hook the
+  imported figure renders but stands still. To make a sculpted model *move*,
+  it needs the **Universal Animation Library** clips played through a
+  `THREE.AnimationMixer` (a planned upgrade). Until then the procedural body is
+  the better choice for a *living* crowd.
+
 ---
 
 ## Notes

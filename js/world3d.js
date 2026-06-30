@@ -1007,19 +1007,20 @@ function makeHuman(ap) {
   }
   const grp = new THREE.Group();
   const weave = Art ? Art.detail("cloth", 2, 3) : null;
-  const skin = new THREE.MeshStandardMaterial({ color: ap.skin, roughness: 0.7 });
+  const skin = new THREE.MeshStandardMaterial({ color: ap.skin, roughness: 0.58, metalness: 0.0, envMapIntensity: 0.5 });
   const hairM = new THREE.MeshStandardMaterial({ color: ap.hair, roughness: 0.85 });
   const cloth = new THREE.MeshStandardMaterial({ color: ap.cloth, roughness: 0.9, map: weave });
   const cloth2 = new THREE.MeshStandardMaterial({ color: ap.cloth2, roughness: 0.9, map: weave });
   const dark = new THREE.MeshStandardMaterial({ color: 0x140f0b, roughness: 0.6 });
   const belt = new THREE.MeshStandardMaterial({ color: shadeHex(ap.cloth2, 0.55), roughness: 0.7 });
 
-  // proportions by build (radii, not box widths) — kept slender so they read human
-  let chest = 0.155, waist = 0.12, arm = 0.05, leg = 0.072, belly = 0;
-  if (ap.build === "thin")     { chest = 0.13;  waist = 0.10; arm = 0.043; leg = 0.062; }
-  if (ap.build === "muscular") { chest = 0.185; waist = 0.135; arm = 0.066; leg = 0.086; }
-  if (ap.build === "fat")      { chest = 0.20;  waist = 0.20; arm = 0.058; leg = 0.088; belly = 0.07; }
-  const thighL = 0.50, shinL = 0.46, upArmL = 0.36, foreL = 0.34;
+  // proportions by build (radii, not box widths) — athletic, broad-shoulder/
+  // narrow-waist silhouette so they read as real adults, not toys
+  let chest = 0.16, waist = 0.112, arm = 0.052, leg = 0.075, belly = 0;
+  if (ap.build === "thin")     { chest = 0.135; waist = 0.096; arm = 0.044; leg = 0.064; }
+  if (ap.build === "muscular") { chest = 0.205; waist = 0.128; arm = 0.072; leg = 0.092; }
+  if (ap.build === "fat")      { chest = 0.205; waist = 0.205; arm = 0.060; leg = 0.092; belly = 0.078; }
+  const thighL = 0.55, shinL = 0.52, upArmL = 0.39, foreL = 0.37;
   const hipY = thighL + shinL + 0.1;          // pelvis height
   const torsoH = 0.62, shoulderY = hipY + torsoH;
 
@@ -1046,19 +1047,21 @@ function makeHuman(ap) {
   const cb = chest * 0.96;
   const chestBall = ballE(cloth, cb, cb * 0.66, cb * 0.72); chestBall.position.set(0, shoulderY - 0.14, 0.01); grp.add(chestBall);
   if (belly) { const wb = waist + belly; const b = ballE(cloth, wb, wb * 0.7, wb * 0.95); b.position.set(0, hipY + 0.16, 0.03); grp.add(b); }
-  // shoulder yoke
-  const yoke = ballE(cloth, chest * 1.25, chest * 0.4, chest * 0.7); yoke.position.y = shoulderY - 0.05; grp.add(yoke);
+  // broad shoulder yoke (deltoid-to-deltoid) + collarbone line
+  const yoke = ballE(cloth, chest * 1.5, chest * 0.44, chest * 0.74); yoke.position.y = shoulderY - 0.04; grp.add(yoke);
+  const abs = ballE(cloth, waist * 1.04, (torsoH * 0.4), waist * 0.9); abs.position.set(0, hipY + torsoH * 0.34, 0.02); grp.add(abs); // midriff
 
-  // ---- arms: shoulder ball -> upper -> elbow -> forearm -> hand ----
-  const shX = chest + arm * 0.7;
+  // ---- arms: deltoid -> upper -> elbow -> forearm -> a real hand ----
+  const shX = chest * 1.18 + arm * 0.55;
   const mkArm = (sx) => {
-    const piv = new THREE.Object3D(); piv.position.set(sx, shoulderY - 0.06, 0); grp.add(piv);
-    const shoulder = ball(cloth, arm * 1.25); piv.add(shoulder);
-    const upper = limb(cloth, arm, arm * 0.9, upArmL); upper.position.y = -upArmL / 2; piv.add(upper);
+    const piv = new THREE.Object3D(); piv.position.set(sx, shoulderY - 0.05, 0); grp.add(piv);
+    const shoulder = ballE(cloth, arm * 1.5, arm * 1.3, arm * 1.3); piv.add(shoulder);     // deltoid
+    const upper = limb(cloth, arm * 0.96, arm * 0.82, upArmL); upper.position.y = -upArmL / 2; piv.add(upper);
     const elbowPiv = new THREE.Object3D(); elbowPiv.position.y = -upArmL; piv.add(elbowPiv);
-    const elbow = ball(cloth, arm * 0.95); elbowPiv.add(elbow);
-    const fore = limb(skin, arm * 0.85, arm * 0.7, foreL); fore.position.y = -foreL / 2; elbowPiv.add(fore);
-    const hand = ballE(skin, arm * 1.1, arm * 1.32, arm * 0.77); hand.position.y = -foreL - 0.02; elbowPiv.add(hand);
+    const elbow = ball(skin, arm * 0.86); elbowPiv.add(elbow);
+    const fore = limb(skin, arm * 0.82, arm * 0.6, foreL); fore.position.y = -foreL / 2; elbowPiv.add(fore);
+    const wrist = ball(skin, arm * 0.55); wrist.position.y = -foreL; elbowPiv.add(wrist);
+    const hand = ballE(skin, arm * 0.95, arm * 1.5, arm * 0.5); hand.position.y = -foreL - foreL * 0.16; elbowPiv.add(hand); // flattened palm
     return { piv, elbow: elbowPiv };
   };
   const AL = mkArm(-shX), AR = mkArm(shX);
@@ -1131,8 +1134,8 @@ function makeHuman(ap) {
 
   grp.add(contactShadow());
 
-  // overall scale for tall/short
-  let s = 1; if (ap.build === "tall") s = 1.16; if (ap.build === "short") s = 0.84;
+  // overall scale — sized to stand eye-to-eye with the player, varied by build
+  let s = 0.84; if (ap.build === "tall") s = 0.95; if (ap.build === "short") s = 0.75;
   grp.scale.setScalar(s);
 
   return {
