@@ -33,6 +33,8 @@ let toastTimer = 0;
 const ACTIVATE = 4.2;     // proximity radius to interact
 const BOUND = 140;        // half-size of a district plot (a sprawling metropolis)
 const LANE_STEP = 18;     // spacing of the road grid / size of a city block
+// districts predating the automobile: no cars, no paved grid, a low period skyline
+const PREINDUSTRIAL = { ziggurat_crown: 1, god_quarter: 1, hanging_market: 1, ironwall: 1, sub_strata: 1 };
 
 /* solid building footprints the player can't walk through (outdoor only) */
 let colliders = [];
@@ -503,9 +505,9 @@ let cityTraffic = null, cityTrafficData = [];
 
 /* The city that stretches past the district walls in every direction:
  * a near band of homes, then mid-rise offices, then a far skyline of towers. */
-function buildSurroundCity(theme, night) {
-  const modern = theme.tex === "neon" || theme.tex === "panel" || theme.tex === "marble";
-  const N = 900;
+function buildSurroundCity(theme, night, lowrise) {
+  const modern = !lowrise && (theme.tex === "neon" || theme.tex === "panel" || theme.tex === "marble");
+  const N = lowrise ? 700 : 900;
   // lit windows on EVERY building now — warm for old eras, cool for modern
   const winColor = modern ? (theme.tex === "marble" ? 0xbfe2ff : 0x38d0c8) : 0xffcf8a;
   const win = Art ? Art.windowTex(winColor, night, 4242) : null;
@@ -528,8 +530,11 @@ function buildSurroundCity(theme, night) {
     const a = Math.random() * Math.PI * 2;
     // distance ring controls scale: near = homes, mid = offices, far = towers
     const t = Math.random();
-    const r = BOUND + 10 + t * 240;
-    const h = t < 0.33 ? 6 + Math.random() * 14 : t < 0.66 ? 18 + Math.random() * 40 : 50 + Math.random() * 140;
+    const r = BOUND + 10 + t * (lowrise ? 170 : 240);
+    // a low period skyline for pre-industrial eras — no towers, just rooftops
+    const h = lowrise
+      ? (3 + Math.random() * 7) + (t > 0.7 ? Math.random() * 6 : 0)
+      : (t < 0.33 ? 6 + Math.random() * 14 : t < 0.66 ? 18 + Math.random() * 40 : 50 + Math.random() * 140);
     const w = (t < 0.33 ? 4 : 6) + Math.random() * (t < 0.33 ? 3 : 9);
     const d = w * (0.8 + Math.random() * 0.5);
     const x = Math.cos(a) * r, z = Math.sin(a) * r, rot = Math.random() * Math.PI;
@@ -538,7 +543,7 @@ function buildSurroundCity(theme, night) {
     c.setHex(theme.wall).multiplyScalar(0.6 + Math.random() * 0.7);
     bodies.setColorAt(i, c);
 
-    if (t < 0.33) {                                          // a house — pitched roof
+    if (t < 0.33 || lowrise) {                               // a house — pitched roof
       const rw = Math.max(w, d) * 0.82, rh = 0.8 + Math.random() * 1.0;
       _dummy.position.set(x, h + rh / 2, z); _dummy.rotation.set(0, rot + Math.PI / 4, 0); _dummy.scale.set(rw, rh, rw);
       _dummy.updateMatrix(); roofs.push(_dummy.matrix.clone());
@@ -900,10 +905,13 @@ World.buildDistrict = function (id, spawnCenter, cinematic) {
   // it with the vast city that stretches to the horizon in every direction
   spawnPeople(g, id, rnd);
   spawnStreetLife(g, id, rnd);
-  spawnTraffic(id, Engine.isNight(g));
-  if (id !== "sub_strata") buildSurroundCity(theme, Engine.isNight(g));
-  buildRoads(id);
-  buildGroundTraffic(id, Engine.isNight(g));
+  // pre-industrial districts (ancient / classical / medieval) get NO cars, NO
+  // paved roads, and a period-correct low skyline — only the modern districts
+  // (cyber, corporate) and the contemporary slums have motor traffic & towers.
+  const preIndustrial = PREINDUSTRIAL[id];
+  if (!preIndustrial) spawnTraffic(id, Engine.isNight(g));
+  if (id !== "sub_strata") buildSurroundCity(theme, Engine.isNight(g), preIndustrial);
+  if (!preIndustrial) { buildRoads(id); buildGroundTraffic(id, Engine.isNight(g)); }
 
   // a few enterable buildings at the walls — the reachable edge of the city
   // that stretches beyond this district
@@ -2461,8 +2469,8 @@ const THEMES = {
       for (let i = 0; i < 4; i++) brazier((rnd() - 0.5) * 40, (rnd() - 0.5) * 40);
       // towering ancient mudbrick tenement-ziggurats lining the streets
       fillBlocks(rnd, (x, z, w) => {
-        detailHouse(x, z, w, 16 + rnd() * 28, "ancient", night, rnd() > 0.8);
-        registerBuilding(x, z, w, rnd() > 0.7 ? "Scribe's Tower" : "Mudbrick Tenement", "home", "ancient");
+        detailHouse(x, z, w, 4 + rnd() * 6, "ancient", night, rnd() > 0.5);   // low mudbrick — period-correct
+        registerBuilding(x, z, w, rnd() > 0.7 ? "Scribe's House" : "Mudbrick Home", "home", "ancient");
       });
     },
   },
@@ -2571,7 +2579,7 @@ const THEMES = {
     build(rnd, night) {
       // tall fortified blocks with crenellations and arrow-slits, on the grid
       fillBlocks(rnd, (x, z, w0, r) => {
-        const w = Math.min(w0, 14), h = 34 + r() * 54;
+        const w = Math.min(w0, 14), h = 14 + r() * 26;       // fortress-scale, not skyscrapers
         box(w, h, w, 0x35332f, x, h / 2, z, { rough: 1 });
         registerBuilding(x, z, w, r() > 0.5 ? "Fortified Tower" : "Family Bastion", r() > 0.5 ? "home" : "office", "medieval");
         for (let m = 0; m < 4; m++) box(w / 4, 0.7, 0.5, 0x2e2c29, x - w / 2 + 0.5 + m * (w / 4), h + 0.35, z + w / 2, { tex: "concrete" }); // merlons
