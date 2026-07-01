@@ -67,6 +67,16 @@ Assets.init = function (renderer, onReady) {
     return;
   }
 
+  // Optional upgrades are OFF by default so a normal hosted deploy never probes
+  // for files that aren't there (which would spam 404s and slow first load).
+  // Add CC0 files under assets/ and set window.AXIOM_USE_ASSETS = true to enable.
+  if (!window.AXIOM_USE_ASSETS) {
+    Assets.ready = true;
+    note("optional asset upgrades OFF (default) — running fully procedural. " +
+         "Drop CC0 files under assets/ and set window.AXIOM_USE_ASSETS=true to enable.");
+    return;
+  }
+
   // ---- HDRI environment lighting (highest impact) ----
   if (Assets.config.hdri && typeof THREE.RGBELoader === "function" && typeof THREE.PMREMGenerator === "function") {
     jobs.push(new Promise((res) => {
