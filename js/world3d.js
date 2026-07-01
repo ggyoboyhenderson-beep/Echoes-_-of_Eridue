@@ -1045,29 +1045,23 @@ function makeHuman(ap) {
   };
   const L = mkLeg(-legX), R = mkLeg(legX);
 
-  // ---- torso (tapered shoulders->waist), pectorals, & optional belly ----
-  const torso = limb(cloth, chest, waist, torsoH); torso.position.y = hipY + torsoH / 2; grp.add(torso);
-  const cb = chest * 0.96;
-  const chestBall = ballE(cloth, cb, cb * 0.6, cb * 0.72); chestBall.position.set(0, shoulderY - 0.15, 0.02); grp.add(chestBall);
-  // two pectorals for a real chest read
-  const pecL = ballE(cloth, chest * 0.5, chest * 0.42, chest * 0.5); pecL.position.set(-chest * 0.42, shoulderY - 0.14, chest * 0.55); grp.add(pecL);
-  const pecR = pecL.clone(); pecR.position.x = chest * 0.42; grp.add(pecR);
-  if (belly) { const wb = waist + belly; const b = ballE(cloth, wb, wb * 0.7, wb * 0.95); b.position.set(0, hipY + 0.16, 0.03); grp.add(b); }
-  // broad shoulder yoke (deltoid-to-deltoid) + collarbone line
-  const yoke = ballE(cloth, chest * 1.5, chest * 0.44, chest * 0.74); yoke.position.y = shoulderY - 0.04; grp.add(yoke);
-  const abs = ballE(cloth, waist * 1.04, (torsoH * 0.4), waist * 0.9); abs.position.set(0, hipY + torsoH * 0.34, 0.02); grp.add(abs); // midriff
+  // ---- torso: one clean tapered trunk (shoulders -> waist) ----
+  const torso = limb(cloth, chest, waist * 0.95, torsoH); torso.position.y = hipY + torsoH / 2; grp.add(torso);
+  const chestBall = ballE(cloth, chest * 0.94, chest * 0.5, chest * 0.66); chestBall.position.set(0, shoulderY - 0.16, 0.01); grp.add(chestBall);
+  if (belly) { const wb = waist + belly; const b = ballE(cloth, wb, wb * 0.72, wb * 0.9); b.position.set(0, hipY + 0.15, 0.03); grp.add(b); }
+  // a modest shoulder yoke (not oversized)
+  const yoke = ballE(cloth, chest * 1.2, chest * 0.4, chest * 0.66); yoke.position.y = shoulderY - 0.06; grp.add(yoke);
 
   // ---- arms: deltoid -> upper -> elbow -> forearm -> a real hand ----
   const shX = chest * 1.18 + arm * 0.55;
   const mkArm = (sx) => {
     const piv = new THREE.Object3D(); piv.position.set(sx, shoulderY - 0.05, 0); grp.add(piv);
-    const shoulder = ballE(cloth, arm * 1.5, arm * 1.3, arm * 1.3); piv.add(shoulder);     // deltoid
-    const upper = limb(cloth, arm * 0.96, arm * 0.82, upArmL); upper.position.y = -upArmL / 2; piv.add(upper);
+    const shoulder = ball(cloth, arm * 1.2); piv.add(shoulder);                              // deltoid
+    const upper = limb(cloth, arm * 0.95, arm * 0.82, upArmL); upper.position.y = -upArmL / 2; piv.add(upper);
     const elbowPiv = new THREE.Object3D(); elbowPiv.position.y = -upArmL; piv.add(elbowPiv);
-    const elbow = ball(skin, arm * 0.86); elbowPiv.add(elbow);
-    const fore = limb(skin, arm * 0.82, arm * 0.6, foreL); fore.position.y = -foreL / 2; elbowPiv.add(fore);
-    const wrist = ball(skin, arm * 0.55); wrist.position.y = -foreL; elbowPiv.add(wrist);
-    const hand = ballE(skin, arm * 0.95, arm * 1.5, arm * 0.5); hand.position.y = -foreL - foreL * 0.16; elbowPiv.add(hand); // flattened palm
+    const elbow = ball(cloth, arm * 0.86); elbowPiv.add(elbow);
+    const fore = limb(skin, arm * 0.82, arm * 0.62, foreL); fore.position.y = -foreL / 2; elbowPiv.add(fore);
+    const hand = ballE(skin, arm * 0.9, arm * 1.3, arm * 0.55); hand.position.y = -foreL - foreL * 0.12; elbowPiv.add(hand); // hand
     return { piv, elbow: elbowPiv };
   };
   const AL = mkArm(-shX), AR = mkArm(shX);
@@ -1077,49 +1071,36 @@ function makeHuman(ap) {
   const eyeColMat = new THREE.MeshStandardMaterial({ color: ap.eye != null ? ap.eye : 0x3a2a18, roughness: 0.35 });
   const accentMat = new THREE.MeshStandardMaterial({ color: ap.accent != null ? ap.accent : ap.cloth2, roughness: 0.85, map: weave });
 
+  // neck
+  const neck = limb(skin, 0.066, 0.08, 0.15); neck.position.y = shoulderY + 0.05; grp.add(neck);
+
+  // ---- a clean, well-proportioned head ----
+  const eyeColMatH = new THREE.MeshStandardMaterial({ color: ap.eye != null ? ap.eye : 0x3a2a18, roughness: 0.35 });
+  const browMatH = new THREE.MeshStandardMaterial({ color: ap.brow != null ? ap.brow : ap.hair, roughness: 0.85 });
   const lipMat = new THREE.MeshStandardMaterial({ color: shadeHex(ap.skin, 0.72), roughness: 0.5 });
-
-  // neck (sterno-mastoid) + trapezius into the shoulders
-  const neck = limb(skin, 0.07, 0.088, 0.17); neck.position.y = shoulderY + 0.06; grp.add(neck);
-  const trap = ballE(cloth, chest * 0.78, 0.1, chest * 0.5); trap.position.set(0, shoulderY + 0.02, -0.02); grp.add(trap);
-
-  // ---- a sculpted head, built from scaled spheres ----
-  const head = new THREE.Group(); head.position.y = shoulderY + 0.33; grp.add(head);
-  const skull = ballE(skin, 0.152, 0.188, 0.16); skull.position.set(0, 0.025, 0); head.add(skull);       // cranium (egg)
-  const occ = ballE(skin, 0.145, 0.15, 0.135); occ.position.set(0, 0.0, -0.055); head.add(occ);            // back of head
-  const cheekL = ballE(skin, 0.062, 0.072, 0.072); cheekL.position.set(-0.082, -0.045, 0.082); head.add(cheekL);
-  const cheekR = cheekL.clone(); cheekR.position.x = 0.082; head.add(cheekR);
-  const jaw = ballE(skin, 0.108, 0.088, 0.108); jaw.position.set(0, -0.105, 0.012); head.add(jaw);          // jaw
-  const chin = ballE(skin, 0.05, 0.046, 0.058); chin.position.set(0, -0.14, 0.092); head.add(chin);         // chin
-  const brow = ballE(skin, 0.132, 0.042, 0.06); brow.position.set(0, 0.052, 0.118); head.add(brow);         // brow ridge
-  // nose: bridge, tip, nostrils
-  const nbridge = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.12, 0.045), skin); nbridge.position.set(0, -0.005, 0.158); nbridge.rotation.x = 0.16; head.add(nbridge);
-  const nose = ballE(skin, 0.034, 0.03, 0.042); nose.position.set(0, -0.062, 0.182); head.add(nose);
-  const nostrilMat = new THREE.MeshStandardMaterial({ color: shadeHex(ap.skin, 0.55), roughness: 0.6 });
-  const nostrilL = ball(nostrilMat, 0.012); nostrilL.position.set(-0.023, -0.075, 0.176); head.add(nostrilL);
-  const nostrilR = nostrilL.clone(); nostrilR.position.x = 0.023; head.add(nostrilR);
-  // eyes set into sockets, with lids
+  const head = new THREE.Group(); head.position.y = shoulderY + 0.30; grp.add(head);
+  const skull = ballE(skin, 0.148, 0.174, 0.155); head.add(skull);                                    // head
+  const jaw = ballE(skin, 0.112, 0.088, 0.11); jaw.position.set(0, -0.088, 0.012); head.add(jaw);      // jaw + chin
+  const nose = ballE(skin, 0.025, 0.042, 0.04); nose.position.set(0, -0.022, 0.144); head.add(nose);   // nose
+  // eyes
   const eyeMat = new THREE.MeshStandardMaterial({ color: 0xf4f0e8, roughness: 0.25 });
-  const eyeWhiteL = ballE(eyeMat, 0.033, 0.026, 0.02); eyeWhiteL.position.set(-0.058, 0.0, 0.138); head.add(eyeWhiteL);
-  const eyeWhiteR = eyeWhiteL.clone(); eyeWhiteR.position.x = 0.058; head.add(eyeWhiteR);
-  const irisL = ballE(eyeColMat, 0.018, 0.018, 0.013); irisL.position.set(-0.058, 0.0, 0.153); head.add(irisL);
-  const irisR = irisL.clone(); irisR.position.x = 0.058; head.add(irisR);
-  const pupilL = ball(dark, 0.0085); pupilL.position.set(-0.058, 0.0, 0.162); head.add(pupilL);
-  const pupilR = pupilL.clone(); pupilR.position.x = 0.058; head.add(pupilR);
-  const lidL = ballE(skin, 0.042, 0.02, 0.03); lidL.position.set(-0.058, 0.024, 0.142); head.add(lidL);     // upper lid
-  const lidR = lidL.clone(); lidR.position.x = 0.058; head.add(lidR);
-  // ears
-  const earL = ballE(skin, 0.02, 0.05, 0.032); earL.position.set(-0.152, -0.012, -0.005); head.add(earL);
-  const earR = earL.clone(); earR.position.x = 0.152; head.add(earR);
-  // eyebrows (refs kept for expressions)
-  const ebL = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.014, 0.024), browM); ebL.position.set(-0.058, 0.05, 0.152); head.add(ebL);
-  const ebR = ebL.clone(); ebR.position.x = 0.058; head.add(ebR);
-  // lips: upper + lower volume + the two corner halves expressions tilt
-  const upperLip = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.016, 0.03), lipMat); upperLip.position.set(0, -0.084, 0.158); head.add(upperLip);
-  const lowerLip = ballE(lipMat, 0.042, 0.02, 0.024); lowerLip.position.set(0, -0.104, 0.156); head.add(lowerLip);
+  const eyeWhiteL = ballE(eyeMat, 0.03, 0.022, 0.016); eyeWhiteL.position.set(-0.052, 0.014, 0.13); head.add(eyeWhiteL);
+  const eyeWhiteR = eyeWhiteL.clone(); eyeWhiteR.position.x = 0.052; head.add(eyeWhiteR);
+  const irisL = ballE(eyeColMatH, 0.014, 0.014, 0.01); irisL.position.set(-0.052, 0.012, 0.144); head.add(irisL);
+  const irisR = irisL.clone(); irisR.position.x = 0.052; head.add(irisR);
+  const pupilL = ball(dark, 0.007); pupilL.position.set(-0.052, 0.012, 0.15); head.add(pupilL);
+  const pupilR = pupilL.clone(); pupilR.position.x = 0.052; head.add(pupilR);
+  // eyebrows
+  const ebL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.013, 0.02), browMatH); ebL.position.set(-0.052, 0.052, 0.142); head.add(ebL);
+  const ebR = ebL.clone(); ebR.position.x = 0.052; head.add(ebR);
+  // small ears
+  const earL = ballE(skin, 0.016, 0.038, 0.026); earL.position.set(-0.144, -0.006, 0.0); head.add(earL);
+  const earR = earL.clone(); earR.position.x = 0.144; head.add(earR);
+  // lips (a band + two corner halves the expressions tilt)
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.016, 0.02), lipMat); lip.position.set(0, -0.076, 0.142); head.add(lip);
   const mthMat = lipMat;
-  const mouthL = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.014, 0.022), mthMat); mouthL.position.set(-0.022, -0.092, 0.152); head.add(mouthL);
-  const mouthR = mouthL.clone(); mouthR.position.x = 0.022; head.add(mouthR);
+  const mouthL = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.013, 0.02), mthMat); mouthL.position.set(-0.019, -0.076, 0.144); head.add(mouthL);
+  const mouthR = mouthL.clone(); mouthR.position.x = 0.019; head.add(mouthR);
 
   // facial hair
   if (ap.facial === "beard" || ap.facial === "goatee") {
@@ -1936,6 +1917,7 @@ World._colliders = () => colliders.map((c) => [c.x, c.z, c.r]);
 World._bonds = () => agents.filter((a) => a.meta && a.meta.bond).map((a) => a.meta.name + " — " + a.meta.bond);
 World._openBond = () => { const a = agents.find((x) => x.meta && x.meta.bond); if (a) openDialogue(a.meta, a); return a ? a.meta.name : null; };
 World._landmarkLabels = () => interactables.filter((i) => i.type === "landmark").map((i) => i.label);
+World._hideTags = () => scene.traverse((o) => { if (o.isSprite) o.visible = false; });
 World._tp = (x, z, y) => { player.pos.set(x, 1.7, z); if (y !== undefined) yaw = y; };
 World._pokeSocial = () => { for (const a of agents) if (!a.partner) a.socialCD = 0; };
 World._freecam = (x, y, z, yw, pt) => { freeCam = true; player.pos.set(x, y, z); yaw = yw; pitch = pt; };
@@ -2091,11 +2073,11 @@ function applyMood(ag, P, dt) {
   f.brow += (m.brow - f.brow) * k; f.raise += (m.raise - f.raise) * k;
   f.smile += (m.smile - f.smile) * k; f.open += (m.open - f.open) * k;
   f.tilt += (m.tilt - f.tilt) * k; f.lean += (m.lean - f.lean) * k;
-  if (P.browL) { P.browL.rotation.z = -f.brow; P.browR.rotation.z = f.brow; P.browL.position.y = 0.05 + f.raise; P.browR.position.y = 0.05 + f.raise; }
+  if (P.browL) { P.browL.rotation.z = -f.brow; P.browR.rotation.z = f.brow; P.browL.position.y = 0.052 + f.raise; P.browR.position.y = 0.052 + f.raise; }
   if (P.mouthL) {
     P.mouthL.rotation.z = -f.smile * 0.5; P.mouthR.rotation.z = f.smile * 0.5;
-    const my = -0.092 - f.open * 0.02; P.mouthL.position.y = my; P.mouthR.position.y = my;
-    P.mouthL.position.x = -0.022 - f.open * 0.004; P.mouthR.position.x = 0.022 + f.open * 0.004;
+    const my = -0.076 - f.open * 0.02; P.mouthL.position.y = my; P.mouthR.position.y = my;
+    P.mouthL.position.x = -0.019 - f.open * 0.004; P.mouthR.position.x = 0.019 + f.open * 0.004;
   }
   if (P.head) P.head.rotation.z = f.tilt;
   if (!ag.pose) ag.grp.rotation.x = f.lean;          // posers control their own body
@@ -2103,7 +2085,7 @@ function applyMood(ag, P, dt) {
   ag.blinkT = (ag.blinkT == null ? Math.random() * 4 : ag.blinkT) - dt;
   if (P.eyeL) {
     const blinking = ag.blinkT < 0 && ag.blinkT > -0.12;
-    P.eyeL.scale.y = 0.026 * (blinking ? 0.2 : 1); P.eyeR.scale.y = P.eyeL.scale.y;
+    P.eyeL.scale.y = 0.022 * (blinking ? 0.2 : 1); P.eyeR.scale.y = P.eyeL.scale.y;
     if (ag.blinkT < -0.12) ag.blinkT = 2.5 + Math.random() * 4;
   }
   // fidget for the jittery moods
