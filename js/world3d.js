@@ -443,6 +443,9 @@ function makeVehicle(kind, color, night) {
     mk(0.3, 0.16, 0.06, head, 0.5, 0.56, 1.9); mk(0.3, 0.16, 0.06, head, -0.5, 0.56, 1.9);
     mk(0.28, 0.14, 0.06, tail, 0.52, 0.6, -1.9); mk(0.28, 0.14, 0.06, tail, -0.52, 0.6, -1.9);
   }
+  // scale to lifelike size next to a person (a real car dwarfs you)
+  const vs = kind === "car" ? 1.5 : kind === "hover" ? 1.35 : 1.2;
+  grp.scale.setScalar(vs);
   return { grp, wheels };
 }
 
@@ -682,7 +685,7 @@ function buildGroundTraffic(id, night) {
   const n = TRAFFIC_COUNT[id];
   const count = n != null ? n : 90;
   if (!count) return;
-  const geo = new THREE.BoxGeometry(1.5, 0.6, 3.0);
+  const geo = new THREE.BoxGeometry(2.3, 1.0, 4.8);   // lifelike car footprint
   const panels = Art && Art.carPanels ? Art.carPanels() : null;     // seams + glasshouse, tinted per-car
   const mat = new THREE.MeshStandardMaterial({ map: panels, roughness: 0.45, metalness: 0.45 });
   const im = new THREE.InstancedMesh(geo, mat, count);
@@ -708,8 +711,8 @@ function updateGroundTraffic(dt) {
     const d = cityTrafficData[i];
     d.p += d.dir * d.speed * dt;
     if (d.p > lim) d.p = -lim; else if (d.p < -lim) d.p = lim;
-    if (d.axis === "x") { _dummy.position.set(d.p, 0.35, d.fixed); _dummy.rotation.set(0, d.dir > 0 ? Math.PI / 2 : -Math.PI / 2, 0); }
-    else { _dummy.position.set(d.fixed, 0.35, d.p); _dummy.rotation.set(0, d.dir > 0 ? 0 : Math.PI, 0); }
+    if (d.axis === "x") { _dummy.position.set(d.p, 0.5, d.fixed); _dummy.rotation.set(0, d.dir > 0 ? Math.PI / 2 : -Math.PI / 2, 0); }
+    else { _dummy.position.set(d.fixed, 0.5, d.p); _dummy.rotation.set(0, d.dir > 0 ? 0 : Math.PI, 0); }
     _dummy.scale.set(1, 1, 1); _dummy.updateMatrix();
     cityTraffic.setMatrixAt(i, _dummy.matrix);
   }
@@ -1042,10 +1045,13 @@ function makeHuman(ap) {
   };
   const L = mkLeg(-legX), R = mkLeg(legX);
 
-  // ---- torso (tapered shoulders->waist), subtle chest & optional belly ----
+  // ---- torso (tapered shoulders->waist), pectorals, & optional belly ----
   const torso = limb(cloth, chest, waist, torsoH); torso.position.y = hipY + torsoH / 2; grp.add(torso);
   const cb = chest * 0.96;
-  const chestBall = ballE(cloth, cb, cb * 0.66, cb * 0.72); chestBall.position.set(0, shoulderY - 0.14, 0.01); grp.add(chestBall);
+  const chestBall = ballE(cloth, cb, cb * 0.6, cb * 0.72); chestBall.position.set(0, shoulderY - 0.15, 0.02); grp.add(chestBall);
+  // two pectorals for a real chest read
+  const pecL = ballE(cloth, chest * 0.5, chest * 0.42, chest * 0.5); pecL.position.set(-chest * 0.42, shoulderY - 0.14, chest * 0.55); grp.add(pecL);
+  const pecR = pecL.clone(); pecR.position.x = chest * 0.42; grp.add(pecR);
   if (belly) { const wb = waist + belly; const b = ballE(cloth, wb, wb * 0.7, wb * 0.95); b.position.set(0, hipY + 0.16, 0.03); grp.add(b); }
   // broad shoulder yoke (deltoid-to-deltoid) + collarbone line
   const yoke = ballE(cloth, chest * 1.5, chest * 0.44, chest * 0.74); yoke.position.y = shoulderY - 0.04; grp.add(yoke);
@@ -1071,41 +1077,65 @@ function makeHuman(ap) {
   const eyeColMat = new THREE.MeshStandardMaterial({ color: ap.eye != null ? ap.eye : 0x3a2a18, roughness: 0.35 });
   const accentMat = new THREE.MeshStandardMaterial({ color: ap.accent != null ? ap.accent : ap.cloth2, roughness: 0.85, map: weave });
 
-  const neck = limb(skin, 0.06, 0.07, 0.12); neck.position.y = shoulderY + 0.02; grp.add(neck);
-  const head = new THREE.Group(); head.position.y = shoulderY + 0.28; grp.add(head);
-  const skull = ballE(skin, 0.16 * 0.92, 0.16 * 1.05, 0.16); head.add(skull);
-  const jaw = ballE(skin, 0.12 * 0.9, 0.12 * 0.8, 0.12 * 0.95); jaw.position.set(0, -0.08, 0.02); head.add(jaw);
-  const nose = ball(skin, 0.035); nose.position.set(0, -0.02, 0.15); head.add(nose);
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xf4f0e8, roughness: 0.4 });
-  const eyeWhiteL = ballE(eyeMat, 0.035, 0.035, 0.018); eyeWhiteL.position.set(-0.06, 0.02, 0.13); head.add(eyeWhiteL);
-  const eyeWhiteR = eyeWhiteL.clone(); eyeWhiteR.position.x = 0.06; head.add(eyeWhiteR);
-  const irisL = ball(eyeColMat, 0.022); irisL.position.set(-0.06, 0.02, 0.15); head.add(irisL);
-  const irisR = irisL.clone(); irisR.position.x = 0.06; head.add(irisR);
-  const pupilL = ball(dark, 0.011); pupilL.position.set(-0.06, 0.02, 0.162); head.add(pupilL);
-  const pupilR = pupilL.clone(); pupilR.position.x = 0.06; head.add(pupilR);
-  // eyebrows
-  const ebL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.02), browM); ebL.position.set(-0.06, 0.06, 0.15); head.add(ebL);
-  const ebR = ebL.clone(); ebR.position.x = 0.06; head.add(ebR);
-  // mouth — two short halves we tilt into a smile or a frown
-  const mthMat = new THREE.MeshStandardMaterial({ color: shadeHex(ap.skin, 0.45), roughness: 0.6 });
-  const mouthL = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.014, 0.02), mthMat); mouthL.position.set(-0.021, -0.078, 0.146); head.add(mouthL);
-  const mouthR = mouthL.clone(); mouthR.position.x = 0.021; head.add(mouthR);
+  const lipMat = new THREE.MeshStandardMaterial({ color: shadeHex(ap.skin, 0.72), roughness: 0.5 });
+
+  // neck (sterno-mastoid) + trapezius into the shoulders
+  const neck = limb(skin, 0.07, 0.088, 0.17); neck.position.y = shoulderY + 0.06; grp.add(neck);
+  const trap = ballE(cloth, chest * 0.78, 0.1, chest * 0.5); trap.position.set(0, shoulderY + 0.02, -0.02); grp.add(trap);
+
+  // ---- a sculpted head, built from scaled spheres ----
+  const head = new THREE.Group(); head.position.y = shoulderY + 0.33; grp.add(head);
+  const skull = ballE(skin, 0.152, 0.188, 0.16); skull.position.set(0, 0.025, 0); head.add(skull);       // cranium (egg)
+  const occ = ballE(skin, 0.145, 0.15, 0.135); occ.position.set(0, 0.0, -0.055); head.add(occ);            // back of head
+  const cheekL = ballE(skin, 0.062, 0.072, 0.072); cheekL.position.set(-0.082, -0.045, 0.082); head.add(cheekL);
+  const cheekR = cheekL.clone(); cheekR.position.x = 0.082; head.add(cheekR);
+  const jaw = ballE(skin, 0.108, 0.088, 0.108); jaw.position.set(0, -0.105, 0.012); head.add(jaw);          // jaw
+  const chin = ballE(skin, 0.05, 0.046, 0.058); chin.position.set(0, -0.14, 0.092); head.add(chin);         // chin
+  const brow = ballE(skin, 0.132, 0.042, 0.06); brow.position.set(0, 0.052, 0.118); head.add(brow);         // brow ridge
+  // nose: bridge, tip, nostrils
+  const nbridge = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.12, 0.045), skin); nbridge.position.set(0, -0.005, 0.158); nbridge.rotation.x = 0.16; head.add(nbridge);
+  const nose = ballE(skin, 0.034, 0.03, 0.042); nose.position.set(0, -0.062, 0.182); head.add(nose);
+  const nostrilMat = new THREE.MeshStandardMaterial({ color: shadeHex(ap.skin, 0.55), roughness: 0.6 });
+  const nostrilL = ball(nostrilMat, 0.012); nostrilL.position.set(-0.023, -0.075, 0.176); head.add(nostrilL);
+  const nostrilR = nostrilL.clone(); nostrilR.position.x = 0.023; head.add(nostrilR);
+  // eyes set into sockets, with lids
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xf4f0e8, roughness: 0.25 });
+  const eyeWhiteL = ballE(eyeMat, 0.033, 0.026, 0.02); eyeWhiteL.position.set(-0.058, 0.0, 0.138); head.add(eyeWhiteL);
+  const eyeWhiteR = eyeWhiteL.clone(); eyeWhiteR.position.x = 0.058; head.add(eyeWhiteR);
+  const irisL = ballE(eyeColMat, 0.018, 0.018, 0.013); irisL.position.set(-0.058, 0.0, 0.153); head.add(irisL);
+  const irisR = irisL.clone(); irisR.position.x = 0.058; head.add(irisR);
+  const pupilL = ball(dark, 0.0085); pupilL.position.set(-0.058, 0.0, 0.162); head.add(pupilL);
+  const pupilR = pupilL.clone(); pupilR.position.x = 0.058; head.add(pupilR);
+  const lidL = ballE(skin, 0.042, 0.02, 0.03); lidL.position.set(-0.058, 0.024, 0.142); head.add(lidL);     // upper lid
+  const lidR = lidL.clone(); lidR.position.x = 0.058; head.add(lidR);
+  // ears
+  const earL = ballE(skin, 0.02, 0.05, 0.032); earL.position.set(-0.152, -0.012, -0.005); head.add(earL);
+  const earR = earL.clone(); earR.position.x = 0.152; head.add(earR);
+  // eyebrows (refs kept for expressions)
+  const ebL = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.014, 0.024), browM); ebL.position.set(-0.058, 0.05, 0.152); head.add(ebL);
+  const ebR = ebL.clone(); ebR.position.x = 0.058; head.add(ebR);
+  // lips: upper + lower volume + the two corner halves expressions tilt
+  const upperLip = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.016, 0.03), lipMat); upperLip.position.set(0, -0.084, 0.158); head.add(upperLip);
+  const lowerLip = ballE(lipMat, 0.042, 0.02, 0.024); lowerLip.position.set(0, -0.104, 0.156); head.add(lowerLip);
+  const mthMat = lipMat;
+  const mouthL = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.014, 0.022), mthMat); mouthL.position.set(-0.022, -0.092, 0.152); head.add(mouthL);
+  const mouthR = mouthL.clone(); mouthR.position.x = 0.022; head.add(mouthR);
 
   // facial hair
   if (ap.facial === "beard" || ap.facial === "goatee") {
-    const bd = ballE(hairM, 0.12, ap.facial === "goatee" ? 0.06 : 0.11, 0.1); bd.position.set(0, -0.1, 0.06); head.add(bd);
+    const bd = ballE(hairM, 0.118, ap.facial === "goatee" ? 0.07 : 0.12, 0.105); bd.position.set(0, -0.118, 0.05); head.add(bd);
   }
-  if (ap.facial === "stubble") { const st = ballE(hairM, 0.115, 0.07, 0.095); st.position.set(0, -0.1, 0.05); st.material = new THREE.MeshStandardMaterial({ color: ap.hair, roughness: 1, transparent: true, opacity: 0.4 }); head.add(st); }
-  if (ap.facial === "mustache" || ap.facial === "beard") { const ms = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.02, 0.02), hairM); ms.position.set(0, -0.045, 0.15); head.add(ms); }
+  if (ap.facial === "stubble") { const st = ballE(new THREE.MeshStandardMaterial({ color: ap.hair, roughness: 1, transparent: true, opacity: 0.4 }), 0.116, 0.08, 0.1); st.position.set(0, -0.115, 0.045); head.add(st); }
+  if (ap.facial === "mustache" || ap.facial === "beard") { const ms = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.02, 0.022), hairM); ms.position.set(0, -0.066, 0.156); head.add(ms); }
 
-  // hair by style
+  // hair, by style — reads as a real hairline/shape
   const style = ap.hairStyle || "short";
   if (style !== "bald") {
-    const cap = ballE(hairM, 0.168, 0.168 * 0.85, 0.168); cap.position.set(0, 0.05, -0.01); head.add(cap);
-    if (style === "short" || style === "cropped") { const b = ballE(hairM, 0.15, 0.12, 0.105); b.position.set(0, 0.01, -0.08); head.add(b); }
-    if (style === "long") { const b = ballE(hairM, 0.16, 0.26, 0.12); b.position.set(0, -0.12, -0.07); head.add(b); }
-    if (style === "wild") { for (let k = 0; k < 5; k++) { const t = ball(hairM, 0.05); t.position.set((Math.random() - 0.5) * 0.28, 0.12 + Math.random() * 0.08, (Math.random() - 0.5) * 0.2); head.add(t); } }
-    if (style === "topknot") { const k = ball(hairM, 0.06); k.position.set(0, 0.2, -0.02); head.add(k); }
+    const cap = ballE(hairM, 0.174, 0.165, 0.172); cap.position.set(0, 0.075, -0.012); head.add(cap);        // scalp
+    if (style === "short" || style === "cropped") { const b = ballE(hairM, 0.162, 0.12, 0.13); b.position.set(0, 0.055, -0.05); head.add(b); }
+    if (style === "long") { const b = ballE(hairM, 0.18, 0.3, 0.14); b.position.set(0, -0.13, -0.05); head.add(b); const fr = ballE(hairM, 0.15, 0.09, 0.06); fr.position.set(0, 0.12, 0.11); head.add(fr); }
+    if (style === "wild") { for (let k = 0; k < 6; k++) { const t = ballE(hairM, 0.05, 0.085, 0.05); t.position.set((Math.random() - 0.5) * 0.3, 0.15 + Math.random() * 0.08, (Math.random() - 0.5) * 0.22); t.rotation.z = (Math.random() - 0.5) * 0.8; head.add(t); } }
+    if (style === "topknot") { const b = ballE(hairM, 0.162, 0.12, 0.13); b.position.set(0, 0.055, -0.03); head.add(b); const k = ball(hairM, 0.062); k.position.set(0, 0.24, -0.02); head.add(k); }
   }
 
   // headwear
@@ -1238,8 +1268,8 @@ const STREET_LIFE = {
   spire:          ["hawker", "busker"],
   sub_strata:     ["beggar", "drunk", "cutpurse"],
 };
-const STREET_N = { neon_labyrinth: 60, broken_crown: 54, hanging_market: 48, ironwall: 40,
-  sub_strata: 22, ziggurat_crown: 30, god_quarter: 16, spire: 18 };
+const STREET_N = { neon_labyrinth: 34, broken_crown: 30, hanging_market: 28, ironwall: 24,
+  sub_strata: 14, ziggurat_crown: 18, god_quarter: 10, spire: 12 };
 const STREET_POSE = { beggar: "beg", solicitor: "solicit", busker: "busk", drunk: "drunk",
   preacher: "preach", hawker: "hawk", cutpurse: "lurk", addict: "drunk" };
 const STREET_WANDER = { drunk: 1, addict: 1, cutpurse: 1 };  // these roam; others hold a corner
@@ -2061,11 +2091,11 @@ function applyMood(ag, P, dt) {
   f.brow += (m.brow - f.brow) * k; f.raise += (m.raise - f.raise) * k;
   f.smile += (m.smile - f.smile) * k; f.open += (m.open - f.open) * k;
   f.tilt += (m.tilt - f.tilt) * k; f.lean += (m.lean - f.lean) * k;
-  if (P.browL) { P.browL.rotation.z = -f.brow; P.browR.rotation.z = f.brow; P.browL.position.y = 0.06 + f.raise; P.browR.position.y = 0.06 + f.raise; }
+  if (P.browL) { P.browL.rotation.z = -f.brow; P.browR.rotation.z = f.brow; P.browL.position.y = 0.05 + f.raise; P.browR.position.y = 0.05 + f.raise; }
   if (P.mouthL) {
     P.mouthL.rotation.z = -f.smile * 0.5; P.mouthR.rotation.z = f.smile * 0.5;
-    const my = -0.078 - f.open * 0.02; P.mouthL.position.y = my; P.mouthR.position.y = my;
-    P.mouthL.position.x = -0.021 - f.open * 0.004; P.mouthR.position.x = 0.021 + f.open * 0.004;
+    const my = -0.092 - f.open * 0.02; P.mouthL.position.y = my; P.mouthR.position.y = my;
+    P.mouthL.position.x = -0.022 - f.open * 0.004; P.mouthR.position.x = 0.022 + f.open * 0.004;
   }
   if (P.head) P.head.rotation.z = f.tilt;
   if (!ag.pose) ag.grp.rotation.x = f.lean;          // posers control their own body
@@ -2073,7 +2103,7 @@ function applyMood(ag, P, dt) {
   ag.blinkT = (ag.blinkT == null ? Math.random() * 4 : ag.blinkT) - dt;
   if (P.eyeL) {
     const blinking = ag.blinkT < 0 && ag.blinkT > -0.12;
-    P.eyeL.scale.y = 0.035 * (blinking ? 0.18 : 1); P.eyeR.scale.y = P.eyeL.scale.y;
+    P.eyeL.scale.y = 0.026 * (blinking ? 0.2 : 1); P.eyeR.scale.y = P.eyeL.scale.y;
     if (ag.blinkT < -0.12) ag.blinkT = 2.5 + Math.random() * 4;
   }
   // fidget for the jittery moods
